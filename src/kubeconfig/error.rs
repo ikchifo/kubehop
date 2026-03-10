@@ -13,6 +13,10 @@ pub enum KubeconfigError {
     #[error("failed to read kubeconfig")]
     Read(#[source] std::io::Error),
 
+    /// File could not be written to disk.
+    #[error("failed to write kubeconfig")]
+    Write(#[source] std::io::Error),
+
     /// A write target could not be uniquely resolved across
     /// multiple kubeconfig files.
     #[error("context write target is ambiguous across multiple kubeconfig files")]

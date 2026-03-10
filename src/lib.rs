@@ -20,7 +20,7 @@ pub use cli::Config;
 /// # Errors
 ///
 /// Returns an error if command parsing or execution fails.
-pub fn run(config: Config) -> anyhow::Result<()> {
+pub fn run(config: &Config) -> anyhow::Result<()> {
     let mode = dispatch::mode_from_argv0(&config.argv0);
     cli::execute(mode, config)
 }

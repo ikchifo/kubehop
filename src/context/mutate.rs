@@ -1,13 +1,15 @@
 // Rust guideline compliant 2026-02-21
 //! Context mutation: rename, delete, unset.
 
-use std::fs;
 use std::path::Path;
 
 use serde_yaml::Value;
 
 use super::error::ContextError;
-use crate::kubeconfig::KubeconfigError;
+use super::yaml_helpers::{
+    load_yaml_doc, read_current_context, remove_current_context, set_current_context,
+    validate_target_exists, write_yaml_doc,
+};
 
 /// Outcome of a context rename operation.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -48,30 +50,23 @@ pub struct UnsetResult {
 ///
 /// - [`ContextError::NotFound`] if `old` does not match any entry in
 ///   the `contexts` array.
-/// - [`ContextError::Kubeconfig`] wrapping [`KubeconfigError::Read`]
-///   for I/O failures on read or write.
-/// - [`ContextError::Kubeconfig`] wrapping [`KubeconfigError::Parse`]
-///   if the file contains invalid YAML.
+/// - [`ContextError::Kubeconfig`] for I/O or YAML parsing failures.
 pub fn rename_context(
     path: impl AsRef<Path>,
     old: &str,
     new_name: &str,
 ) -> Result<RenameResult, ContextError> {
     let path = path.as_ref();
-
-    let raw = fs::read_to_string(path).map_err(KubeconfigError::Read)?;
-    let mut doc: Value = serde_yaml::from_str(&raw).map_err(KubeconfigError::Parse)?;
+    let mut doc = load_yaml_doc(path)?;
 
     validate_target_exists(&doc, old)?;
-
     rename_in_contexts(&mut doc, old, new_name);
 
     if read_current_context(&doc).as_deref() == Some(old) {
         set_current_context(&mut doc, new_name);
     }
 
-    let out = serde_yaml::to_string(&doc).map_err(KubeconfigError::Parse)?;
-    fs::write(path, out).map_err(KubeconfigError::Read)?;
+    write_yaml_doc(path, &doc)?;
 
     Ok(RenameResult {
         old_name: old.to_owned(),
@@ -89,18 +84,13 @@ pub fn rename_context(
 ///
 /// - [`ContextError::NotFound`] if `target` does not match any entry
 ///   in the `contexts` array.
-/// - [`ContextError::Kubeconfig`] wrapping [`KubeconfigError::Read`]
-///   for I/O failures on read or write.
-/// - [`ContextError::Kubeconfig`] wrapping [`KubeconfigError::Parse`]
-///   if the file contains invalid YAML.
+/// - [`ContextError::Kubeconfig`] for I/O or YAML parsing failures.
 pub fn delete_context(
     path: impl AsRef<Path>,
     target: &str,
 ) -> Result<DeleteResult, ContextError> {
     let path = path.as_ref();
-
-    let raw = fs::read_to_string(path).map_err(KubeconfigError::Read)?;
-    let mut doc: Value = serde_yaml::from_str(&raw).map_err(KubeconfigError::Parse)?;
+    let mut doc = load_yaml_doc(path)?;
 
     validate_target_exists(&doc, target)?;
 
@@ -112,8 +102,7 @@ pub fn delete_context(
         remove_current_context(&mut doc);
     }
 
-    let out = serde_yaml::to_string(&doc).map_err(KubeconfigError::Parse)?;
-    fs::write(path, out).map_err(KubeconfigError::Read)?;
+    write_yaml_doc(path, &doc)?;
 
     Ok(DeleteResult {
         deleted: target.to_owned(),
@@ -121,73 +110,55 @@ pub fn delete_context(
     })
 }
 
-/// Unset the active context in a kubeconfig file.
+/// Delete the currently active context from a kubeconfig file.
 ///
-/// Removes the `current-context` key from the document entirely. All
-/// other fields (contexts, clusters, users) are preserved. If no
-/// `current-context` was set, the file is still written back but the
-/// result's `previous` field will be `None`.
+/// Resolves `current-context` from the document and removes both the
+/// context entry and the `current-context` field in a single read-write
+/// pass, avoiding a redundant parse.
 ///
 /// # Errors
 ///
-/// - [`ContextError::Kubeconfig`] wrapping [`KubeconfigError::Read`]
-///   for I/O failures on read or write.
-/// - [`ContextError::Kubeconfig`] wrapping [`KubeconfigError::Parse`]
-///   if the file contains invalid YAML.
-pub fn unset_context(path: impl AsRef<Path>) -> Result<UnsetResult, ContextError> {
+/// - [`ContextError::NoContexts`] if no `current-context` is set.
+/// - [`ContextError::Kubeconfig`] for I/O or YAML parsing failures.
+pub fn delete_current_context(path: impl AsRef<Path>) -> Result<DeleteResult, ContextError> {
     let path = path.as_ref();
+    let mut doc = load_yaml_doc(path)?;
 
-    let raw = fs::read_to_string(path).map_err(KubeconfigError::Read)?;
-    let mut doc: Value = serde_yaml::from_str(&raw).map_err(KubeconfigError::Parse)?;
+    let target = read_current_context(&doc).ok_or(ContextError::NoContexts)?;
 
-    let previous = read_current_context(&doc);
-
+    remove_from_contexts(&mut doc, &target);
     remove_current_context(&mut doc);
 
-    let out = serde_yaml::to_string(&doc).map_err(KubeconfigError::Parse)?;
-    fs::write(path, out).map_err(KubeconfigError::Read)?;
+    write_yaml_doc(path, &doc)?;
+
+    Ok(DeleteResult {
+        deleted: target,
+        was_current: true,
+    })
+}
+
+/// Unset the active context in a kubeconfig file.
+///
+/// Removes the `current-context` key from the document entirely. All
+/// other fields (contexts, clusters, users) are preserved. Returns
+/// early without writing if no `current-context` was set.
+///
+/// # Errors
+///
+/// - [`ContextError::Kubeconfig`] for I/O or YAML parsing failures.
+pub fn unset_context(path: impl AsRef<Path>) -> Result<UnsetResult, ContextError> {
+    let path = path.as_ref();
+    let mut doc = load_yaml_doc(path)?;
+
+    let previous = read_current_context(&doc);
+    if previous.is_none() {
+        return Ok(UnsetResult { previous: None });
+    }
+
+    remove_current_context(&mut doc);
+    write_yaml_doc(path, &doc)?;
 
     Ok(UnsetResult { previous })
-}
-
-fn validate_target_exists(doc: &Value, target: &str) -> Result<(), ContextError> {
-    let contexts = doc
-        .get("contexts")
-        .and_then(Value::as_sequence)
-        .ok_or_else(|| ContextError::NotFound(target.to_owned()))?;
-
-    let found = contexts.iter().any(|entry| {
-        entry
-            .get("name")
-            .and_then(Value::as_str)
-            .is_some_and(|n| n == target)
-    });
-
-    if found {
-        Ok(())
-    } else {
-        Err(ContextError::NotFound(target.to_owned()))
-    }
-}
-
-fn read_current_context(doc: &Value) -> Option<String> {
-    doc.get("current-context")
-        .and_then(Value::as_str)
-        .map(String::from)
-}
-
-fn set_current_context(doc: &mut Value, target: &str) {
-    if let Value::Mapping(ref mut map) = *doc {
-        let key = Value::String("current-context".to_owned());
-        map.insert(key, Value::String(target.to_owned()));
-    }
-}
-
-fn remove_current_context(doc: &mut Value) {
-    if let Value::Mapping(ref mut map) = *doc {
-        let key = Value::String("current-context".to_owned());
-        map.remove(&key);
-    }
 }
 
 fn rename_in_contexts(doc: &mut Value, old: &str, new_name: &str) {
@@ -202,10 +173,11 @@ fn rename_in_contexts(doc: &mut Value, old: &str, new_name: &str) {
             .is_some_and(|n| n == old);
 
         if matches {
-            if let Value::Mapping(ref mut map) = *entry {
+            if let Value::Mapping(map) = entry {
                 let key = Value::String("name".to_owned());
                 map.insert(key, Value::String(new_name.to_owned()));
             }
+            break;
         }
     }
 }
@@ -225,6 +197,7 @@ fn remove_from_contexts(doc: &mut Value, target: &str) {
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
     use std::io::Write;
 
     use super::*;
@@ -254,7 +227,7 @@ clusters:
       server: https://dev.example.com
 ";
 
-    // ── rename ──────────────────────────────────────────────
+    // -- rename --
 
     #[test]
     fn rename_existing_context() {
@@ -314,7 +287,7 @@ clusters:
         assert_eq!(clusters.unwrap().len(), 1);
     }
 
-    // ── delete ──────────────────────────────────────────────
+    // -- delete --
 
     #[test]
     fn delete_existing_context() {
@@ -376,7 +349,37 @@ clusters:
         assert!(clusters.is_some(), "clusters field must survive round-trip");
     }
 
-    // ── unset ───────────────────────────────────────────────
+    // -- delete_current_context --
+
+    #[test]
+    fn delete_current_context_single_pass() {
+        let f = write_temp_kubeconfig(SIMPLE_KUBECONFIG);
+        let result = delete_current_context(f.path()).unwrap();
+
+        assert_eq!(result.deleted, "dev");
+        assert!(result.was_current);
+
+        let after = fs::read_to_string(f.path()).unwrap();
+        let doc: Value = serde_yaml::from_str(&after).unwrap();
+        assert!(doc.get("current-context").is_none());
+    }
+
+    #[test]
+    fn delete_current_context_errors_when_none_set() {
+        let content = "\
+apiVersion: v1
+kind: Config
+contexts:
+  - name: alpha
+    context:
+      cluster: alpha-cluster
+";
+        let f = write_temp_kubeconfig(content);
+        let err = delete_current_context(f.path()).unwrap_err();
+        assert!(matches!(err, ContextError::NoContexts));
+    }
+
+    // -- unset --
 
     #[test]
     fn unset_removes_current_context() {

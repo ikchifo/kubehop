@@ -1,13 +1,13 @@
 // Rust guideline compliant 2026-02-21
 //! Context switching via full `serde_yaml::Value` round-trip.
 
-use std::fs;
 use std::path::Path;
 
-use serde_yaml::Value;
-
 use super::error::ContextError;
-use crate::kubeconfig::KubeconfigError;
+use super::yaml_helpers::{
+    load_yaml_doc, read_current_context, set_current_context, validate_target_exists,
+    write_yaml_doc,
+};
 
 /// Outcome of a context switch operation.
 ///
@@ -26,24 +26,20 @@ pub struct SwitchResult {
 ///
 /// Performs a full `serde_yaml::Value` round-trip so that all fields
 /// (clusters, users, auth providers, certificates) are preserved
-/// byte-for-byte through the write.
+/// through the write.
 ///
 /// # Errors
 ///
 /// - [`ContextError::NotFound`] if `target` does not match any entry
 ///   in the `contexts` array.
-/// - [`ContextError::Kubeconfig`] wrapping [`KubeconfigError::Read`]
-///   for I/O failures on read or write.
-/// - [`ContextError::Kubeconfig`] wrapping [`KubeconfigError::Parse`]
-///   if the file contains invalid YAML.
+/// - [`ContextError::Kubeconfig`] for I/O or YAML parsing failures.
 pub fn switch_context(
     path: impl AsRef<Path>,
     target: &str,
 ) -> Result<SwitchResult, ContextError> {
     let path = path.as_ref();
 
-    let raw = fs::read_to_string(path).map_err(KubeconfigError::Read)?;
-    let mut doc: Value = serde_yaml::from_str(&raw).map_err(KubeconfigError::Parse)?;
+    let mut doc = load_yaml_doc(path)?;
 
     validate_target_exists(&doc, target)?;
 
@@ -51,8 +47,7 @@ pub fn switch_context(
 
     set_current_context(&mut doc, target);
 
-    let out = serde_yaml::to_string(&doc).map_err(KubeconfigError::Parse)?;
-    fs::write(path, out).map_err(KubeconfigError::Read)?;
+    write_yaml_doc(path, &doc)?;
 
     Ok(SwitchResult {
         previous,
@@ -60,47 +55,15 @@ pub fn switch_context(
     })
 }
 
-/// Verify that `target` appears as a context name in the `contexts` array.
-fn validate_target_exists(doc: &Value, target: &str) -> Result<(), ContextError> {
-    let contexts = doc
-        .get("contexts")
-        .and_then(Value::as_sequence)
-        .ok_or_else(|| ContextError::NotFound(target.to_owned()))?;
-
-    let found = contexts.iter().any(|entry| {
-        entry
-            .get("name")
-            .and_then(Value::as_str)
-            .is_some_and(|n| n == target)
-    });
-
-    if found {
-        Ok(())
-    } else {
-        Err(ContextError::NotFound(target.to_owned()))
-    }
-}
-
-/// Extract the current `current-context` value from the document.
-fn read_current_context(doc: &Value) -> Option<String> {
-    doc.get("current-context")
-        .and_then(Value::as_str)
-        .map(String::from)
-}
-
-/// Set `current-context` to `target` in the document mapping.
-fn set_current_context(doc: &mut Value, target: &str) {
-    if let Value::Mapping(ref mut map) = *doc {
-        let key = Value::String("current-context".to_owned());
-        map.insert(key, Value::String(target.to_owned()));
-    }
-}
-
 #[cfg(test)]
 mod tests {
+    use std::fs;
     use std::io::Write;
 
+    use serde_yaml::Value;
+
     use super::*;
+    use crate::kubeconfig::KubeconfigError;
 
     fn write_temp_kubeconfig(content: &str) -> tempfile::NamedTempFile {
         let mut f = tempfile::NamedTempFile::new().expect("create temp file");

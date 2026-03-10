@@ -1,7 +1,7 @@
 // Rust guideline compliant 2026-02-21
 //! CLI argument parsing and application-level orchestration.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context as _};
 
@@ -174,8 +174,7 @@ impl Config {
 /// # Errors
 ///
 /// Returns an error if command execution fails.
-#[allow(clippy::needless_pass_by_value)]
-pub fn execute(mode: ToolMode, config: Config) -> anyhow::Result<()> {
+pub fn execute(mode: ToolMode, config: &Config) -> anyhow::Result<()> {
     if mode == ToolMode::Kubens {
         eprintln!("kubens mode not yet implemented");
         return Ok(());
@@ -189,7 +188,7 @@ pub fn execute(mode: ToolMode, config: Config) -> anyhow::Result<()> {
         ParseResult::Exit => return Ok(()),
     };
 
-    dispatch_command(command, &config)
+    dispatch_command(command, config)
 }
 
 fn dispatch_command(command: Command, config: &Config) -> anyhow::Result<()> {
@@ -259,18 +258,15 @@ fn cmd_swap_previous(config: &Config) -> anyhow::Result<()> {
 }
 
 fn cmd_delete(config: &Config, target: &str) -> anyhow::Result<()> {
-    let resolved_target = if target == "." {
-        let view = load_merged_view(config)?;
-        current::current_context(&view)
-            .context("cannot resolve '.': no current context is set")?
-            .to_owned()
-    } else {
-        target.to_owned()
-    };
-
     let write_path = primary_kubeconfig(config)?;
-    let result = mutate::delete_context(&write_path, &resolved_target)
-        .with_context(|| format!("failed to delete context {resolved_target:?}"))?;
+
+    let result = if target == "." {
+        mutate::delete_current_context(write_path)
+            .context("failed to delete current context")?
+    } else {
+        mutate::delete_context(write_path, target)
+            .with_context(|| format!("failed to delete context {target:?}"))?
+    };
 
     if result.was_current {
         eprintln!(
@@ -307,11 +303,11 @@ fn cmd_unset(config: &Config) -> anyhow::Result<()> {
 }
 
 /// Return the first kubeconfig path, used for write operations.
-fn primary_kubeconfig(config: &Config) -> anyhow::Result<PathBuf> {
+fn primary_kubeconfig(config: &Config) -> anyhow::Result<&Path> {
     config
         .kubeconfig_paths
         .first()
-        .cloned()
+        .map(PathBuf::as_path)
         .ok_or_else(|| anyhow::anyhow!("no kubeconfig paths configured"))
 }
 
