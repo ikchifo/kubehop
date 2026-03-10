@@ -33,10 +33,7 @@ pub struct SwitchResult {
 /// - [`ContextError::NotFound`] if `target` does not match any entry
 ///   in the `contexts` array.
 /// - [`ContextError::Kubeconfig`] for I/O or YAML parsing failures.
-pub fn switch_context(
-    path: impl AsRef<Path>,
-    target: &str,
-) -> Result<SwitchResult, ContextError> {
+pub fn switch_context(path: impl AsRef<Path>, target: &str) -> Result<SwitchResult, ContextError> {
     let path = path.as_ref();
 
     let mut doc = load_yaml_doc(path)?;

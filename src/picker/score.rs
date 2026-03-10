@@ -109,10 +109,7 @@ mod tests {
         assert!(!scored.is_empty());
         for s in &scored {
             let name = &items[s.index].name;
-            assert!(
-                name.contains("prod"),
-                "expected {name:?} to match 'prod'"
-            );
+            assert!(name.contains("prod"), "expected {name:?} to match 'prod'");
         }
     }
 

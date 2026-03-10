@@ -1,11 +1,11 @@
 // Rust guideline compliant 2026-02-21
 //! Interactive fuzzy picker for context selection.
 
+pub mod fzf;
 mod score;
 mod tui;
-pub mod fzf;
 
-pub use score::{ScoredItem, score_items};
+pub use score::{score_items, ScoredItem};
 pub use tui::pick_inline;
 
 /// A single item in the picker list.

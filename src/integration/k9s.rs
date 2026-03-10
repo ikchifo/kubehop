@@ -95,8 +95,7 @@ pub fn execute_pick(args: &PickArgs, config: &Config) -> anyhow::Result<()> {
                     .with_context(|| format!("failed to switch to context {name:?}"))?;
 
                 if let Some(ref prev) = switch_result.previous {
-                    let state =
-                        crate::context::state::StateFile::new(&config.cache_dir);
+                    let state = crate::context::state::StateFile::new(&config.cache_dir);
                     if let Err(e) = state.save(prev) {
                         eprintln!("warning: could not save previous context state: {e}");
                     }
@@ -119,8 +118,7 @@ fn load_view(args: &PickArgs, config: &Config) -> anyhow::Result<KubeConfigView>
         KubeConfigView::load(path)
             .with_context(|| format!("failed to load kubeconfig from {}", path.display()))
     } else {
-        KubeConfigView::load_merged(&config.kubeconfig_paths)
-            .context("failed to load kubeconfig")
+        KubeConfigView::load_merged(&config.kubeconfig_paths).context("failed to load kubeconfig")
     }
 }
 
@@ -163,13 +161,9 @@ mod tests {
 
     #[test]
     fn kubeconfig_path() {
-        let result =
-            parse_pick_args(&args(&["--kubeconfig", "/tmp/kubeconfig"])).unwrap();
+        let result = parse_pick_args(&args(&["--kubeconfig", "/tmp/kubeconfig"])).unwrap();
         assert!(!result.switch);
-        assert_eq!(
-            result.kubeconfig,
-            Some(PathBuf::from("/tmp/kubeconfig"))
-        );
+        assert_eq!(result.kubeconfig, Some(PathBuf::from("/tmp/kubeconfig")));
         assert!(result.current.is_none());
     }
 
@@ -202,8 +196,7 @@ mod tests {
 
     #[test]
     fn unknown_flag_errors() {
-        let err = parse_pick_args(&args(&["--bogus"]))
-            .expect_err("should reject unknown flag");
+        let err = parse_pick_args(&args(&["--bogus"])).expect_err("should reject unknown flag");
         assert!(
             err.to_string().contains("unknown pick flag"),
             "unexpected error: {err}"
@@ -212,8 +205,7 @@ mod tests {
 
     #[test]
     fn kubeconfig_missing_value_errors() {
-        let err = parse_pick_args(&args(&["--kubeconfig"]))
-            .expect_err("should require a value");
+        let err = parse_pick_args(&args(&["--kubeconfig"])).expect_err("should require a value");
         assert!(
             err.to_string().contains("requires a path"),
             "unexpected error: {err}"
@@ -222,8 +214,7 @@ mod tests {
 
     #[test]
     fn current_missing_value_errors() {
-        let err = parse_pick_args(&args(&["--current"]))
-            .expect_err("should require a value");
+        let err = parse_pick_args(&args(&["--current"])).expect_err("should require a value");
         assert!(
             err.to_string().contains("requires a context name"),
             "unexpected error: {err}"
@@ -242,10 +233,7 @@ mod tests {
         .unwrap();
 
         assert!(result.switch);
-        assert_eq!(
-            result.kubeconfig,
-            Some(PathBuf::from("/etc/kube/config"))
-        );
+        assert_eq!(result.kubeconfig, Some(PathBuf::from("/etc/kube/config")));
         assert_eq!(result.current.as_deref(), Some("dev"));
     }
 }

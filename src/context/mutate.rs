@@ -85,10 +85,7 @@ pub fn rename_context(
 /// - [`ContextError::NotFound`] if `target` does not match any entry
 ///   in the `contexts` array.
 /// - [`ContextError::Kubeconfig`] for I/O or YAML parsing failures.
-pub fn delete_context(
-    path: impl AsRef<Path>,
-    target: &str,
-) -> Result<DeleteResult, ContextError> {
+pub fn delete_context(path: impl AsRef<Path>, target: &str) -> Result<DeleteResult, ContextError> {
     let path = path.as_ref();
     let mut doc = load_yaml_doc(path)?;
 
@@ -340,10 +337,7 @@ clusters:
         let contexts = doc.get("contexts").and_then(Value::as_sequence).unwrap();
 
         assert_eq!(contexts.len(), 1);
-        assert_eq!(
-            contexts[0].get("name").and_then(Value::as_str),
-            Some("dev")
-        );
+        assert_eq!(contexts[0].get("name").and_then(Value::as_str), Some("dev"));
 
         let clusters = doc.get("clusters").and_then(Value::as_sequence);
         assert!(clusters.is_some(), "clusters field must survive round-trip");

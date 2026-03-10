@@ -85,9 +85,7 @@ fn rename_preserves_clusters_and_users() {
 
     let doc = reload_raw(&f);
 
-    let clusters = doc
-        .get("clusters")
-        .and_then(serde_yaml::Value::as_sequence);
+    let clusters = doc.get("clusters").and_then(serde_yaml::Value::as_sequence);
     assert!(
         clusters.is_some(),
         "clusters field must survive rename round-trip",
@@ -132,7 +130,11 @@ fn delete_removes_context_from_file() {
 
     let names = context_names_from_value(&reload_raw(&f));
     assert!(!names.contains(&"staging".to_owned()));
-    assert_eq!(names.len(), 2, "only the targeted context should be removed");
+    assert_eq!(
+        names.len(),
+        2,
+        "only the targeted context should be removed"
+    );
 }
 
 #[test]
@@ -174,9 +176,7 @@ fn delete_preserves_remaining_contexts_and_other_fields() {
     assert!(names.contains(&"dev".to_owned()));
     assert!(names.contains(&"production".to_owned()));
 
-    let clusters = doc
-        .get("clusters")
-        .and_then(serde_yaml::Value::as_sequence);
+    let clusters = doc.get("clusters").and_then(serde_yaml::Value::as_sequence);
     assert!(
         clusters.is_some(),
         "clusters field must survive delete round-trip",
@@ -241,9 +241,7 @@ fn unset_preserves_clusters_and_users() {
 
     let doc = reload_raw(&f);
 
-    let clusters = doc
-        .get("clusters")
-        .and_then(serde_yaml::Value::as_sequence);
+    let clusters = doc.get("clusters").and_then(serde_yaml::Value::as_sequence);
     assert!(
         clusters.is_some(),
         "clusters field must survive unset round-trip",
@@ -251,10 +249,7 @@ fn unset_preserves_clusters_and_users() {
     assert_eq!(clusters.unwrap().len(), 3);
 
     let users = doc.get("users").and_then(serde_yaml::Value::as_sequence);
-    assert!(
-        users.is_some(),
-        "users field must survive unset round-trip",
-    );
+    assert!(users.is_some(), "users field must survive unset round-trip",);
 }
 
 #[test]

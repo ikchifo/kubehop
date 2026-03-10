@@ -5,14 +5,17 @@
 mod common;
 
 use common::make_picker_items;
-use khop::picker::{PickerItem, ScoredItem, score_items};
+use khop::picker::{score_items, PickerItem, ScoredItem};
 
 fn make_items(names: &[&str]) -> Vec<PickerItem> {
     make_picker_items(names, None)
 }
 
 fn names_from_scored<'a>(items: &'a [PickerItem], scored: &[ScoredItem]) -> Vec<&'a str> {
-    scored.iter().map(|s| items[s.index].name.as_str()).collect()
+    scored
+        .iter()
+        .map(|s| items[s.index].name.as_str())
+        .collect()
 }
 
 // -- Empty query ----------------------------------------------------------
@@ -27,7 +30,10 @@ fn test_empty_query_returns_all_items_in_original_order() {
     for (i, s) in scored.iter().enumerate() {
         assert_eq!(s.index, i, "original order must be preserved");
         assert_eq!(s.score, 0, "empty query must produce zero score");
-        assert!(s.indices.is_empty(), "empty query must produce no match indices");
+        assert!(
+            s.indices.is_empty(),
+            "empty query must produce no match indices"
+        );
     }
 }
 
@@ -216,8 +222,10 @@ fn test_match_indices_populated_for_exact_query() {
     );
     // "prod" should match the first 4 characters.
     assert!(
-        s.indices.contains(&0) && s.indices.contains(&1)
-            && s.indices.contains(&2) && s.indices.contains(&3),
+        s.indices.contains(&0)
+            && s.indices.contains(&1)
+            && s.indices.contains(&2)
+            && s.indices.contains(&3),
         "expected indices [0,1,2,3] for prefix 'prod', got {:?}",
         s.indices
     );

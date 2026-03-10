@@ -21,10 +21,7 @@ use super::{PickerItem, PickerResult};
 /// Returns an error if fzf is not found on `PATH` or if the
 /// subprocess fails unexpectedly.
 pub fn pick_fzf(items: &[PickerItem]) -> anyhow::Result<PickerResult> {
-    let current = items
-        .iter()
-        .find(|i| i.is_current)
-        .map(|i| i.name.as_str());
+    let current = items.iter().find(|i| i.is_current).map(|i| i.name.as_str());
 
     let mut cmd = Command::new("fzf");
     cmd.args(["--height", "40%", "--reverse", "--no-sort", "--ansi"]);
@@ -39,9 +36,7 @@ pub fn pick_fzf(items: &[PickerItem]) -> anyhow::Result<PickerResult> {
 
     let mut child = cmd.spawn().map_err(|e| {
         if e.kind() == std::io::ErrorKind::NotFound {
-            anyhow::anyhow!(
-                "fzf not found on PATH. Install fzf or use the built-in picker"
-            )
+            anyhow::anyhow!("fzf not found on PATH. Install fzf or use the built-in picker")
         } else {
             anyhow::anyhow!("failed to spawn fzf: {e}")
         }
@@ -58,8 +53,7 @@ pub fn pick_fzf(items: &[PickerItem]) -> anyhow::Result<PickerResult> {
     let output = child.wait_with_output()?;
 
     if output.status.success() {
-        let selected =
-            String::from_utf8_lossy(&output.stdout).trim().to_owned();
+        let selected = String::from_utf8_lossy(&output.stdout).trim().to_owned();
         if selected.is_empty() {
             Ok(PickerResult::Cancelled)
         } else {

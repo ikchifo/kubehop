@@ -4,7 +4,7 @@
 //! Renders a compact selection UI to stderr using `Viewport::Inline`,
 //! keeping stdout free for machine-readable output.
 
-use std::io::{Stderr, stderr};
+use std::io::{stderr, Stderr};
 
 use crossterm::cursor::SetCursorStyle;
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};

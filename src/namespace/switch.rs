@@ -47,8 +47,7 @@ pub fn switch_namespace(
     let path = path.as_ref();
     let mut doc = load_yaml_doc(path).map_err(NamespaceError::from_context_err)?;
 
-    let ctx_name =
-        read_current_context(&doc).ok_or(NamespaceError::NoCurrentContext)?;
+    let ctx_name = read_current_context(&doc).ok_or(NamespaceError::NoCurrentContext)?;
 
     let previous = read_namespace_of_context(&doc, &ctx_name);
     set_namespace_in_context(&mut doc, &ctx_name, namespace);
@@ -193,9 +192,7 @@ contexts:
 
         let after = fs::read_to_string(f.path()).unwrap();
         let doc: Value = serde_yaml::from_str(&after).unwrap();
-        let ns = doc["contexts"][0]["context"]["namespace"]
-            .as_str()
-            .unwrap();
+        let ns = doc["contexts"][0]["context"]["namespace"].as_str().unwrap();
         assert_eq!(ns, "monitoring");
     }
 
@@ -232,9 +229,7 @@ contexts:
 
         let after = fs::read_to_string(f.path()).unwrap();
         let doc: Value = serde_yaml::from_str(&after).unwrap();
-        let ns = doc["contexts"][0]["context"]["namespace"]
-            .as_str()
-            .unwrap();
+        let ns = doc["contexts"][0]["context"]["namespace"].as_str().unwrap();
         assert_eq!(ns, "production");
     }
 
@@ -248,9 +243,7 @@ contexts:
 
         let after = fs::read_to_string(f.path()).unwrap();
         let doc: Value = serde_yaml::from_str(&after).unwrap();
-        let ns = doc["contexts"][0]["context"]["namespace"]
-            .as_str()
-            .unwrap();
+        let ns = doc["contexts"][0]["context"]["namespace"].as_str().unwrap();
         assert_eq!(ns, "default");
     }
 
@@ -280,9 +273,6 @@ contexts:
         assert!(clusters.is_some(), "clusters field must survive round-trip");
         assert_eq!(clusters.unwrap().len(), 1);
 
-        assert_eq!(
-            doc.get("apiVersion").and_then(Value::as_str),
-            Some("v1")
-        );
+        assert_eq!(doc.get("apiVersion").and_then(Value::as_str), Some("v1"));
     }
 }

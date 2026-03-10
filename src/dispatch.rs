@@ -48,13 +48,7 @@ mod tests {
 
     #[test]
     fn full_paths_resolve_correctly() {
-        assert_eq!(
-            mode_from_argv0("/usr/local/bin/kubectx"),
-            ToolMode::Kubectx
-        );
-        assert_eq!(
-            mode_from_argv0("/usr/local/bin/kubens"),
-            ToolMode::Kubens
-        );
+        assert_eq!(mode_from_argv0("/usr/local/bin/kubectx"), ToolMode::Kubectx);
+        assert_eq!(mode_from_argv0("/usr/local/bin/kubens"), ToolMode::Kubens);
     }
 }

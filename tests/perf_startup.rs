@@ -215,7 +215,10 @@ fn score_independence_empty_query_preserves_order() {
     assert_eq!(scored.len(), items.len());
 
     for (i, s) in scored.iter().enumerate() {
-        assert_eq!(s.index, i, "empty-query items must preserve insertion order");
+        assert_eq!(
+            s.index, i,
+            "empty-query items must preserve insertion order"
+        );
         assert_eq!(s.score, 0, "empty-query score must be zero");
     }
 }
@@ -225,7 +228,10 @@ fn score_independence_empty_query_preserves_order() {
 fn score_independence_no_match() {
     let items = make_picker_items(&["alpha", "beta", "gamma"], None);
     let scored = score_items(&items, "zzzzz");
-    assert!(scored.is_empty(), "non-matching query should return no results");
+    assert!(
+        scored.is_empty(),
+        "non-matching query should return no results"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -257,7 +263,9 @@ fn write_isolation_single_read_roundtrip() {
     );
 
     // Clusters and users must survive the round-trip.
-    let clusters = after.get("clusters").and_then(serde_yaml::Value::as_sequence);
+    let clusters = after
+        .get("clusters")
+        .and_then(serde_yaml::Value::as_sequence);
     assert!(
         clusters.is_some(),
         "clusters must survive the Value round-trip"
@@ -297,7 +305,11 @@ fn write_isolation_no_previous_context() {
         .get("contexts")
         .and_then(serde_yaml::Value::as_sequence)
         .expect("contexts array must survive round-trip");
-    assert_eq!(contexts.len(), 2, "both original contexts must be preserved");
+    assert_eq!(
+        contexts.len(),
+        2,
+        "both original contexts must be preserved"
+    );
 }
 
 /// Consecutive switches to different contexts each produce the correct

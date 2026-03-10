@@ -22,9 +22,7 @@ pub struct ContextListItem {
 ///
 /// Returns [`ContextError::NoContexts`](super::ContextError::NoContexts) if
 /// the kubeconfig has no contexts.
-pub fn list_contexts(
-    view: &KubeConfigView,
-) -> Result<Vec<ContextListItem>, super::ContextError> {
+pub fn list_contexts(view: &KubeConfigView) -> Result<Vec<ContextListItem>, super::ContextError> {
     if view.contexts.is_empty() {
         return Err(super::ContextError::NoContexts);
     }
@@ -136,10 +134,7 @@ mod tests {
 
     #[test]
     fn contexts_sorted_naturally() {
-        let view = make_view(
-            &["ctx-10", "ctx-1", "ctx-2", "ctx-20", "ctx-3"],
-            None,
-        );
+        let view = make_view(&["ctx-10", "ctx-1", "ctx-2", "ctx-20", "ctx-3"], None);
         let items = list_contexts(&view).unwrap();
         let names: Vec<&str> = items.iter().map(|i| i.name.as_str()).collect();
         assert_eq!(names, vec!["ctx-1", "ctx-2", "ctx-3", "ctx-10", "ctx-20"]);
@@ -150,8 +145,7 @@ mod tests {
         let view = make_view(&["alpha", "beta", "gamma"], Some("beta"));
         let items = list_contexts(&view).unwrap();
 
-        let current_items: Vec<&ContextListItem> =
-            items.iter().filter(|i| i.is_current).collect();
+        let current_items: Vec<&ContextListItem> = items.iter().filter(|i| i.is_current).collect();
         assert_eq!(current_items.len(), 1);
         assert_eq!(current_items[0].name, "beta");
     }
@@ -172,16 +166,10 @@ mod tests {
 
     #[test]
     fn natural_sort_mixed_alpha_numeric() {
-        let view = make_view(
-            &["prod", "dev-1", "dev-10", "dev-2", "staging"],
-            None,
-        );
+        let view = make_view(&["prod", "dev-1", "dev-10", "dev-2", "staging"], None);
         let items = list_contexts(&view).unwrap();
         let names: Vec<&str> = items.iter().map(|i| i.name.as_str()).collect();
-        assert_eq!(
-            names,
-            vec!["dev-1", "dev-2", "dev-10", "prod", "staging"]
-        );
+        assert_eq!(names, vec!["dev-1", "dev-2", "dev-10", "prod", "staging"]);
     }
 
     #[test]

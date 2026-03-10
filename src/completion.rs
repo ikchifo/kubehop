@@ -217,7 +217,10 @@ mod tests {
     #[test]
     fn bash_output_has_compreply() {
         let output = generate(Shell::Bash);
-        assert!(output.contains("COMPREPLY"), "bash script must use COMPREPLY");
+        assert!(
+            output.contains("COMPREPLY"),
+            "bash script must use COMPREPLY"
+        );
         assert!(output.contains("compgen"), "bash script must use compgen");
         assert!(
             output.contains("complete -F _kubectx kubectx"),

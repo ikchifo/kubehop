@@ -25,18 +25,12 @@ fn test_dispatch_kubectl_ns_plugin_name() {
 
 #[test]
 fn test_dispatch_full_path_kubens() {
-    assert_eq!(
-        mode_from_argv0("/usr/local/bin/kubens"),
-        ToolMode::Kubens
-    );
+    assert_eq!(mode_from_argv0("/usr/local/bin/kubens"), ToolMode::Kubens);
 }
 
 #[test]
 fn test_dispatch_full_path_kubectx() {
-    assert_eq!(
-        mode_from_argv0("/usr/local/bin/kubectx"),
-        ToolMode::Kubectx
-    );
+    assert_eq!(mode_from_argv0("/usr/local/bin/kubectx"), ToolMode::Kubectx);
 }
 
 #[test]

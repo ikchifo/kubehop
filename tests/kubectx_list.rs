@@ -67,7 +67,13 @@ contexts:
     let names: Vec<&str> = items.iter().map(|i| i.name.as_str()).collect();
     assert_eq!(
         names,
-        vec!["cluster-1", "cluster-2", "cluster-3", "cluster-10", "cluster-20"]
+        vec![
+            "cluster-1",
+            "cluster-2",
+            "cluster-3",
+            "cluster-10",
+            "cluster-20"
+        ]
     );
 }
 
@@ -395,10 +401,7 @@ fn test_list_contexts_merged_three_files_with_numeric_names() {
     let items = list_contexts(&view).unwrap();
 
     let names: Vec<&str> = items.iter().map(|i| i.name.as_str()).collect();
-    assert_eq!(
-        names,
-        vec!["env-1", "env-3", "env-10", "env-20", "env-100"]
-    );
+    assert_eq!(names, vec!["env-1", "env-3", "env-10", "env-20", "env-100"]);
 
     let current: Vec<&ContextListItem> = items.iter().filter(|i| i.is_current).collect();
     assert_eq!(current.len(), 1);
