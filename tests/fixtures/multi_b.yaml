@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: Config
+current-context: ctx-b
+contexts:
+  - name: ctx-b
+    context:
+      cluster: cluster-b
+  - name: shared
+    context:
+      cluster: cluster-b

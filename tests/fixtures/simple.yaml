@@ -1,0 +1,29 @@
+apiVersion: v1
+kind: Config
+current-context: dev
+contexts:
+  - name: dev
+    context:
+      cluster: dev-cluster
+      namespace: default
+  - name: staging
+    context:
+      cluster: staging-cluster
+      namespace: staging
+  - name: production
+    context:
+      cluster: prod-cluster
+clusters:
+  - name: dev-cluster
+    cluster:
+      server: https://dev.example.com
+  - name: staging-cluster
+    cluster:
+      server: https://staging.example.com
+  - name: prod-cluster
+    cluster:
+      server: https://prod.example.com
+users:
+  - name: dev-user
+    user:
+      token: fake-token

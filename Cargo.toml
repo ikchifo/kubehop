@@ -1,0 +1,55 @@
+[package]
+name = "khop"
+version = "0.1.0"
+edition = "2021"
+description = "Fast Kubernetes context and namespace switcher"
+license = "Apache-2.0"
+repository = "https://github.com/ikennao/kubehop"
+keywords = ["kubernetes", "kubectl", "context", "kubectx"]
+categories = ["command-line-utilities"]
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+crossterm = "0.28"
+directories = "6"
+mimalloc = "0.1"
+nucleo-matcher = "0.3"
+ratatui = "0.29"
+serde = { version = "1", features = ["derive"] }
+serde_yaml = "0.9"
+thiserror = "2"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.bench]
+inherits = "release"
+debug = true
+strip = false
+
+[lints.rust]
+missing_debug_implementations = "warn"
+redundant_imports = "warn"
+trivial_numeric_casts = "warn"
+unused_lifetimes = "warn"
+
+[lints.clippy]
+cargo = { level = "warn", priority = -1 }
+complexity = { level = "warn", priority = -1 }
+correctness = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+perf = { level = "warn", priority = -1 }
+style = { level = "warn", priority = -1 }
+suspicious = { level = "warn", priority = -1 }
+undocumented_unsafe_blocks = "warn"
+
+[dev-dependencies]
+tempfile = "3.26.0"
