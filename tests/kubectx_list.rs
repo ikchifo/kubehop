@@ -1,18 +1,15 @@
 // Rust guideline compliant 2026-02-21
 //! Integration tests for context listing and natural sort order.
 
+#[allow(dead_code)]
+mod common;
+
 use std::io::Write;
 use std::path::PathBuf;
 
+use common::fixture;
 use khop::context::list::{list_contexts, ContextListItem};
 use khop::kubeconfig::KubeConfigView;
-
-fn fixture(name: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests")
-        .join("fixtures")
-        .join(name)
-}
 
 // -- Listing from a simple fixture ------------------------------------------
 

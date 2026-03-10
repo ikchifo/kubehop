@@ -16,7 +16,9 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{List, ListItem, ListState, Paragraph};
 use ratatui::{Terminal, TerminalOptions, Viewport};
 
-use super::score::{score_items, ScoredItem};
+use nucleo_matcher::{Config, Matcher};
+
+use super::score::{score_items_with_matcher, ScoredItem};
 use super::{PickerItem, PickerResult};
 
 /// Maximum visible lines for the inline viewport (prompt + list rows).
@@ -59,11 +61,13 @@ struct PickerState {
     query: String,
     scored: Vec<ScoredItem>,
     list_state: ListState,
+    matcher: Matcher,
 }
 
 impl PickerState {
     fn new(items: &[PickerItem]) -> Self {
-        let scored = score_items(items, "");
+        let mut matcher = Matcher::new(Config::DEFAULT);
+        let scored = score_items_with_matcher(items, "", &mut matcher);
         let mut list_state = ListState::default();
         if !scored.is_empty() {
             list_state.select(Some(0));
@@ -72,11 +76,12 @@ impl PickerState {
             query: String::new(),
             scored,
             list_state,
+            matcher,
         }
     }
 
     fn update_scores(&mut self, items: &[PickerItem]) {
-        self.scored = score_items(items, &self.query);
+        self.scored = score_items_with_matcher(items, &self.query, &mut self.matcher);
         if self.scored.is_empty() {
             self.list_state.select(None);
         } else {

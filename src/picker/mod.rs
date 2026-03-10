@@ -17,6 +17,15 @@ pub struct PickerItem {
     pub is_current: bool,
 }
 
+impl From<crate::context::list::ContextListItem> for PickerItem {
+    fn from(item: crate::context::list::ContextListItem) -> Self {
+        Self {
+            name: item.name,
+            is_current: item.is_current,
+        }
+    }
+}
+
 /// Outcome of the interactive picker.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]

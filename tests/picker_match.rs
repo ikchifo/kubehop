@@ -1,16 +1,14 @@
 // Rust guideline compliant 2026-02-21
 //! Integration tests for picker scoring and fuzzy matching.
 
+#[allow(dead_code)]
+mod common;
+
+use common::make_picker_items;
 use khop::picker::{PickerItem, ScoredItem, score_items};
 
 fn make_items(names: &[&str]) -> Vec<PickerItem> {
-    names
-        .iter()
-        .map(|n| PickerItem {
-            name: (*n).to_string(),
-            is_current: false,
-        })
-        .collect()
+    make_picker_items(names, None)
 }
 
 fn names_from_scored<'a>(items: &'a [PickerItem], scored: &[ScoredItem]) -> Vec<&'a str> {

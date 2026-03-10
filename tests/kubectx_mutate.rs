@@ -1,45 +1,13 @@
 // Rust guideline compliant 2026-02-21
 //! Integration tests for context mutation operations (rename, delete, unset).
 
-use std::fs;
-use std::io::Write;
-use std::path::PathBuf;
+#[allow(dead_code)]
+mod common;
 
+use common::{reload_raw, temp_copy, write_temp};
 use khop::context::error::ContextError;
 use khop::context::mutate::{delete_context, rename_context, unset_context};
 use khop::kubeconfig::KubeConfigView;
-use tempfile::NamedTempFile;
-
-fn fixture(name: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests")
-        .join("fixtures")
-        .join(name)
-}
-
-fn temp_copy(fixture_name: &str) -> NamedTempFile {
-    let content = fs::read_to_string(fixture(fixture_name)).expect("read fixture");
-    let mut f = NamedTempFile::new().expect("create temp file");
-    f.write_all(content.as_bytes())
-        .expect("write temp kubeconfig");
-    f.flush().expect("flush temp file");
-    f
-}
-
-fn write_temp(content: &str) -> NamedTempFile {
-    let mut f = NamedTempFile::new().expect("create temp file");
-    f.write_all(content.as_bytes())
-        .expect("write temp kubeconfig");
-    f.flush().expect("flush temp file");
-    f
-}
-
-/// Reloads the written file as a raw `serde_yaml::Value` so tests can
-/// inspect all fields, including those outside `KubeConfigView`.
-fn reload_raw(f: &NamedTempFile) -> serde_yaml::Value {
-    let raw = fs::read_to_string(f.path()).expect("read back temp file");
-    serde_yaml::from_str(&raw).expect("parse rewritten YAML")
-}
 
 fn context_names_from_value(doc: &serde_yaml::Value) -> Vec<String> {
     doc.get("contexts")

@@ -69,20 +69,10 @@ pub fn switch_namespace(
 /// - [`NamespaceError::NoCurrentContext`] if no current context is set.
 /// - [`NamespaceError::Kubeconfig`] for I/O or YAML failures.
 pub fn unset_namespace(path: impl AsRef<Path>) -> Result<NsUnsetResult, NamespaceError> {
-    let path = path.as_ref();
-    let mut doc = load_yaml_doc(path).map_err(NamespaceError::from_context_err)?;
-
-    let ctx_name =
-        read_current_context(&doc).ok_or(NamespaceError::NoCurrentContext)?;
-
-    let previous = read_namespace_of_context(&doc, &ctx_name);
-    set_namespace_in_context(&mut doc, &ctx_name, DEFAULT_NAMESPACE);
-
-    write_yaml_doc(path, &doc).map_err(NamespaceError::from_context_err)?;
-
+    let result = switch_namespace(path, DEFAULT_NAMESPACE)?;
     Ok(NsUnsetResult {
-        context: ctx_name,
-        previous,
+        context: result.context,
+        previous: result.previous,
     })
 }
 

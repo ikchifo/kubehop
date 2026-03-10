@@ -1,29 +1,16 @@
 // Rust guideline compliant 2026-02-21
 //! Integration tests for context switching and state file persistence.
 
-use std::fs;
-use std::io::Write;
-use std::path::PathBuf;
+#[allow(dead_code)]
+mod common;
 
+use std::fs;
+
+use common::{fixture, write_temp};
 use khop::context::error::ContextError;
 use khop::context::state::StateFile;
 use khop::context::switch::switch_context;
 use khop::kubeconfig::{KubeConfigView, KubeconfigError};
-
-fn fixture(name: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests")
-        .join("fixtures")
-        .join(name)
-}
-
-fn write_temp_kubeconfig(content: &str) -> tempfile::NamedTempFile {
-    let mut f = tempfile::NamedTempFile::new().expect("create temp file");
-    f.write_all(content.as_bytes())
-        .expect("write temp kubeconfig");
-    f.flush().expect("flush temp file");
-    f
-}
 
 const FULL_KUBECONFIG: &str = "\
 apiVersion: v1
@@ -66,7 +53,7 @@ users:
 
 #[test]
 fn switch_updates_current_context_in_file() {
-    let f = write_temp_kubeconfig(FULL_KUBECONFIG);
+    let f = write_temp(FULL_KUBECONFIG);
     switch_context(f.path(), "staging").unwrap();
 
     let view = KubeConfigView::load(f.path()).unwrap();
@@ -75,7 +62,7 @@ fn switch_updates_current_context_in_file() {
 
 #[test]
 fn switch_updates_file_on_disk_immediately() {
-    let f = write_temp_kubeconfig(FULL_KUBECONFIG);
+    let f = write_temp(FULL_KUBECONFIG);
     switch_context(f.path(), "production").unwrap();
 
     let raw = fs::read_to_string(f.path()).unwrap();
@@ -88,7 +75,7 @@ fn switch_updates_file_on_disk_immediately() {
 
 #[test]
 fn consecutive_switches_each_update_file() {
-    let f = write_temp_kubeconfig(FULL_KUBECONFIG);
+    let f = write_temp(FULL_KUBECONFIG);
 
     switch_context(f.path(), "staging").unwrap();
     assert_eq!(
@@ -115,7 +102,7 @@ fn consecutive_switches_each_update_file() {
 
 #[test]
 fn switch_returns_previous_context() {
-    let f = write_temp_kubeconfig(FULL_KUBECONFIG);
+    let f = write_temp(FULL_KUBECONFIG);
     let result = switch_context(f.path(), "staging").unwrap();
 
     assert_eq!(result.previous.as_deref(), Some("dev"));
@@ -124,7 +111,7 @@ fn switch_returns_previous_context() {
 
 #[test]
 fn switch_chains_track_previous_correctly() {
-    let f = write_temp_kubeconfig(FULL_KUBECONFIG);
+    let f = write_temp(FULL_KUBECONFIG);
 
     let r1 = switch_context(f.path(), "staging").unwrap();
     assert_eq!(r1.previous.as_deref(), Some("dev"));
@@ -141,7 +128,7 @@ fn switch_chains_track_previous_correctly() {
 
 #[test]
 fn switch_to_same_context_returns_self_as_previous() {
-    let f = write_temp_kubeconfig(FULL_KUBECONFIG);
+    let f = write_temp(FULL_KUBECONFIG);
     let result = switch_context(f.path(), "dev").unwrap();
 
     assert_eq!(result.previous.as_deref(), Some("dev"));
@@ -154,7 +141,7 @@ fn switch_to_same_context_returns_self_as_previous() {
 
 #[test]
 fn switch_to_nonexistent_context_returns_not_found() {
-    let f = write_temp_kubeconfig(FULL_KUBECONFIG);
+    let f = write_temp(FULL_KUBECONFIG);
     let err = switch_context(f.path(), "nonexistent").unwrap_err();
 
     assert!(
@@ -165,7 +152,7 @@ fn switch_to_nonexistent_context_returns_not_found() {
 
 #[test]
 fn switch_to_empty_string_returns_not_found() {
-    let f = write_temp_kubeconfig(FULL_KUBECONFIG);
+    let f = write_temp(FULL_KUBECONFIG);
     let err = switch_context(f.path(), "").unwrap_err();
 
     assert!(
@@ -176,7 +163,7 @@ fn switch_to_empty_string_returns_not_found() {
 
 #[test]
 fn not_found_does_not_mutate_file() {
-    let f = write_temp_kubeconfig(FULL_KUBECONFIG);
+    let f = write_temp(FULL_KUBECONFIG);
     let before = fs::read_to_string(f.path()).unwrap();
 
     let _ = switch_context(f.path(), "nonexistent");
@@ -200,7 +187,7 @@ fn switch_on_missing_file_returns_kubeconfig_error() {
 
 #[test]
 fn state_file_saves_previous_after_switch() {
-    let f = write_temp_kubeconfig(FULL_KUBECONFIG);
+    let f = write_temp(FULL_KUBECONFIG);
     let state_dir = tempfile::tempdir().unwrap();
     let state = StateFile::new(state_dir.path());
 
@@ -215,7 +202,7 @@ fn state_file_saves_previous_after_switch() {
 
 #[test]
 fn state_file_round_trips_through_multiple_switches() {
-    let f = write_temp_kubeconfig(FULL_KUBECONFIG);
+    let f = write_temp(FULL_KUBECONFIG);
     let state_dir = tempfile::tempdir().unwrap();
     let state = StateFile::new(state_dir.path());
 
@@ -251,7 +238,7 @@ contexts:
     context:
       cluster: alpha-cluster
 ";
-    let f = write_temp_kubeconfig(content);
+    let f = write_temp(content);
     let state_dir = tempfile::tempdir().unwrap();
     let state = StateFile::new(state_dir.path());
 
@@ -264,7 +251,7 @@ contexts:
 
 #[test]
 fn state_file_toggle_pattern() {
-    let f = write_temp_kubeconfig(FULL_KUBECONFIG);
+    let f = write_temp(FULL_KUBECONFIG);
     let state_dir = tempfile::tempdir().unwrap();
     let state = StateFile::new(state_dir.path());
 
@@ -293,7 +280,7 @@ fn state_file_toggle_pattern() {
 
 #[test]
 fn round_trip_preserves_clusters() {
-    let f = write_temp_kubeconfig(FULL_KUBECONFIG);
+    let f = write_temp(FULL_KUBECONFIG);
     switch_context(f.path(), "production").unwrap();
 
     let raw = fs::read_to_string(f.path()).unwrap();
@@ -316,7 +303,7 @@ fn round_trip_preserves_clusters() {
 
 #[test]
 fn round_trip_preserves_users() {
-    let f = write_temp_kubeconfig(FULL_KUBECONFIG);
+    let f = write_temp(FULL_KUBECONFIG);
     switch_context(f.path(), "staging").unwrap();
 
     let raw = fs::read_to_string(f.path()).unwrap();
@@ -338,7 +325,7 @@ fn round_trip_preserves_users() {
 
 #[test]
 fn round_trip_preserves_all_contexts() {
-    let f = write_temp_kubeconfig(FULL_KUBECONFIG);
+    let f = write_temp(FULL_KUBECONFIG);
     switch_context(f.path(), "staging").unwrap();
 
     let view = KubeConfigView::load(f.path()).unwrap();
@@ -347,7 +334,7 @@ fn round_trip_preserves_all_contexts() {
 
 #[test]
 fn round_trip_preserves_api_version_and_kind() {
-    let f = write_temp_kubeconfig(FULL_KUBECONFIG);
+    let f = write_temp(FULL_KUBECONFIG);
     switch_context(f.path(), "production").unwrap();
 
     let raw = fs::read_to_string(f.path()).unwrap();
@@ -365,7 +352,7 @@ fn round_trip_preserves_api_version_and_kind() {
 
 #[test]
 fn round_trip_preserves_user_tokens() {
-    let f = write_temp_kubeconfig(FULL_KUBECONFIG);
+    let f = write_temp(FULL_KUBECONFIG);
     switch_context(f.path(), "production").unwrap();
 
     let raw = fs::read_to_string(f.path()).unwrap();
@@ -388,7 +375,7 @@ fn round_trip_preserves_user_tokens() {
 
 #[test]
 fn multiple_switches_preserve_all_fields() {
-    let f = write_temp_kubeconfig(FULL_KUBECONFIG);
+    let f = write_temp(FULL_KUBECONFIG);
 
     switch_context(f.path(), "staging").unwrap();
     switch_context(f.path(), "production").unwrap();
@@ -424,7 +411,7 @@ contexts:
     context:
       cluster: beta-cluster
 ";
-    let f = write_temp_kubeconfig(content);
+    let f = write_temp(content);
     let result = switch_context(f.path(), "beta").unwrap();
 
     assert_eq!(result.previous, None);
@@ -441,7 +428,7 @@ contexts:
     context:
       cluster: alpha-cluster
 ";
-    let f = write_temp_kubeconfig(content);
+    let f = write_temp(content);
     switch_context(f.path(), "alpha").unwrap();
 
     let view = KubeConfigView::load(f.path()).unwrap();
@@ -475,7 +462,7 @@ contexts:
     context:
       cluster: beta-cluster
 ";
-    let f = write_temp_kubeconfig(content);
+    let f = write_temp(content);
 
     let r1 = switch_context(f.path(), "alpha").unwrap();
     assert_eq!(r1.previous, None);

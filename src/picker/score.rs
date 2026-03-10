@@ -22,6 +22,16 @@ pub struct ScoredItem {
 /// sorted by score descending.
 #[must_use]
 pub fn score_items(items: &[super::PickerItem], query: &str) -> Vec<ScoredItem> {
+    let mut matcher = Matcher::new(Config::DEFAULT);
+    score_items_with_matcher(items, query, &mut matcher)
+}
+
+/// Score items reusing an existing matcher to avoid per-call allocation.
+pub(crate) fn score_items_with_matcher(
+    items: &[super::PickerItem],
+    query: &str,
+    matcher: &mut Matcher,
+) -> Vec<ScoredItem> {
     if query.is_empty() {
         return items
             .iter()
@@ -34,7 +44,6 @@ pub fn score_items(items: &[super::PickerItem], query: &str) -> Vec<ScoredItem> 
             .collect();
     }
 
-    let mut matcher = Matcher::new(Config::DEFAULT);
     let pattern = Pattern::new(
         query,
         CaseMatching::Ignore,
@@ -49,7 +58,7 @@ pub fn score_items(items: &[super::PickerItem], query: &str) -> Vec<ScoredItem> 
         .filter_map(|(i, item)| {
             let haystack = Utf32Str::new(&item.name, &mut buf);
             let mut indices = Vec::new();
-            let score = pattern.indices(haystack, &mut matcher, &mut indices)?;
+            let score = pattern.indices(haystack, matcher, &mut indices)?;
             indices.sort_unstable();
             indices.dedup();
             Some(ScoredItem {

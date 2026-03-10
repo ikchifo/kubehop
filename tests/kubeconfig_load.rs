@@ -1,16 +1,11 @@
 // Rust guideline compliant 2026-02-21
 //! Integration tests for kubeconfig parsing, loading, and merging.
 
-use std::path::PathBuf;
+#[allow(dead_code)]
+mod common;
 
+use common::fixture;
 use khop::kubeconfig::KubeConfigView;
-
-fn fixture(name: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests")
-        .join("fixtures")
-        .join(name)
-}
 
 #[test]
 fn test_from_reader_parses_valid_yaml() {

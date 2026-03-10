@@ -6,41 +6,16 @@
 //! (one-load, selective serde, score independence, write isolation)
 //! has not regressed.
 
-use std::fs;
-use std::io::Write;
+#[allow(dead_code)]
+mod common;
 
+use std::fs;
+
+use common::{fixture, make_picker_items, write_temp};
 use khop::context::list::list_contexts;
 use khop::context::switch::switch_context;
 use khop::kubeconfig::KubeConfigView;
 use khop::picker::{score_items, PickerItem};
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-fn fixture(name: &str) -> std::path::PathBuf {
-    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures")
-        .join(name)
-}
-
-fn write_temp_kubeconfig(content: &str) -> tempfile::NamedTempFile {
-    let mut f = tempfile::NamedTempFile::new().expect("create temp file");
-    f.write_all(content.as_bytes())
-        .expect("write temp kubeconfig");
-    f.flush().expect("flush temp file");
-    f
-}
-
-fn make_picker_items(names: &[&str], current: Option<&str>) -> Vec<PickerItem> {
-    names
-        .iter()
-        .map(|n| PickerItem {
-            name: (*n).to_string(),
-            is_current: current == Some(*n),
-        })
-        .collect()
-}
 
 // ---------------------------------------------------------------------------
 // 1. One-load invariant
@@ -263,7 +238,7 @@ fn score_independence_no_match() {
 #[test]
 fn write_isolation_single_read_roundtrip() {
     let original = fs::read_to_string(fixture("simple.yaml")).unwrap();
-    let tmp = write_temp_kubeconfig(&original);
+    let tmp = write_temp(&original);
 
     let result = switch_context(tmp.path(), "staging").unwrap();
     assert_eq!(result.previous.as_deref(), Some("dev"));
@@ -301,7 +276,7 @@ fn write_isolation_single_read_roundtrip() {
 #[test]
 fn write_isolation_no_previous_context() {
     let original = fs::read_to_string(fixture("no_current.yaml")).unwrap();
-    let tmp = write_temp_kubeconfig(&original);
+    let tmp = write_temp(&original);
 
     let result = switch_context(tmp.path(), "beta").unwrap();
     assert_eq!(result.previous, None);
@@ -331,7 +306,7 @@ fn write_isolation_no_previous_context() {
 #[test]
 fn write_isolation_consecutive_switches() {
     let original = fs::read_to_string(fixture("simple.yaml")).unwrap();
-    let tmp = write_temp_kubeconfig(&original);
+    let tmp = write_temp(&original);
 
     let r1 = switch_context(tmp.path(), "staging").unwrap();
     assert_eq!(r1.previous.as_deref(), Some("dev"));

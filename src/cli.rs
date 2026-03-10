@@ -434,13 +434,7 @@ fn cmd_interactive(config: &Config, use_fzf: bool) -> anyhow::Result<()> {
     let view = load_merged_view(config)?;
     let ctx_items = list::list_contexts(&view).context("failed to list contexts")?;
 
-    let picker_items: Vec<PickerItem> = ctx_items
-        .iter()
-        .map(|i| PickerItem {
-            name: i.name.clone(),
-            is_current: i.is_current,
-        })
-        .collect();
+    let picker_items: Vec<PickerItem> = ctx_items.into_iter().map(PickerItem::from).collect();
 
     let result = if use_fzf {
         picker::fzf::pick_fzf(&picker_items).context("fzf picker failed")?
@@ -574,7 +568,8 @@ fn ns_cmd_switch(config: &Config, target: &str, force: bool) -> anyhow::Result<(
 }
 
 fn ns_cmd_swap_previous(config: &Config) -> anyhow::Result<()> {
-    let view = load_merged_view(config)?;
+    let write_path = primary_kubeconfig(config)?;
+    let view = KubeConfigView::load(write_path).context("failed to load kubeconfig")?;
     let ctx_name = view
         .current_context()
         .ok_or_else(|| anyhow::anyhow!("no current context set"))?;
@@ -585,7 +580,7 @@ fn ns_cmd_swap_previous(config: &Config) -> anyhow::Result<()> {
         .context("failed to read namespace state file")?
         .ok_or_else(|| anyhow::anyhow!("no previous namespace found"))?;
 
-    ns_cmd_switch(config, &previous, false)
+    ns_cmd_switch(config, &previous, true)
 }
 
 fn ns_cmd_unset(config: &Config) -> anyhow::Result<()> {
@@ -607,12 +602,12 @@ fn ns_cmd_list_or_interactive(config: &Config) -> anyhow::Result<()> {
         return ns_cmd_interactive(config, false);
     }
 
+    let view = load_merged_view(config)?;
+    let current_ns = current_namespace(&view).unwrap_or_default();
+
     let write_path = primary_kubeconfig(config)?;
     let namespaces = crate::namespace::list::list_namespaces(write_path)
         .context("failed to list namespaces")?;
-
-    let view = load_merged_view(config)?;
-    let current_ns = current_namespace(&view).unwrap_or_default();
 
     for ns in &namespaces {
         if ns == &current_ns {
@@ -626,12 +621,12 @@ fn ns_cmd_list_or_interactive(config: &Config) -> anyhow::Result<()> {
 }
 
 fn ns_cmd_interactive(config: &Config, use_fzf: bool) -> anyhow::Result<()> {
+    let view = load_merged_view(config)?;
+    let current_ns = current_namespace(&view).unwrap_or_default();
+
     let write_path = primary_kubeconfig(config)?;
     let namespaces = crate::namespace::list::list_namespaces(write_path)
         .context("failed to list namespaces")?;
-
-    let view = load_merged_view(config)?;
-    let current_ns = current_namespace(&view).unwrap_or_default();
 
     let picker_items: Vec<PickerItem> = namespaces
         .iter()
