@@ -53,4 +53,4 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: taiki-e/install-action@cargo-deny
-      - run: cargo deny check advisories
+      - run: cargo deny check advisories licenses

@@ -156,12 +156,9 @@ pub(crate) fn parse_args(args: &[String]) -> anyhow::Result<ParseResult> {
             Ok(ParseResult::Run(Command::SwapPrevious))
         }
         "--completion" => {
-            let shell_name = args
-                .get(1)
-                .map(String::as_str)
-                .ok_or_else(|| {
-                    anyhow::anyhow!("--completion requires a shell name (bash, zsh, fish)")
-                })?;
+            let shell_name = args.get(1).map(String::as_str).ok_or_else(|| {
+                anyhow::anyhow!("--completion requires a shell name (bash, zsh, fish)")
+            })?;
             if args.len() > 2 {
                 bail!("--completion takes exactly one argument");
             }
@@ -318,8 +315,7 @@ impl Config {
             cache_dir,
             force_color: std::env::var_os("_KUBECTX_FORCE_COLOR").is_some(),
             no_color: std::env::var_os("NO_COLOR").is_some(),
-            isolated_shell: std::env::var_os("KUBECTX_ISOLATED_SHELL")
-                .is_some_and(|v| v == "1"),
+            isolated_shell: std::env::var_os("KUBECTX_ISOLATED_SHELL").is_some_and(|v| v == "1"),
         }
     }
 }
@@ -404,8 +400,7 @@ fn dispatch_command(command: Command, config: &Config) -> anyhow::Result<()> {
 }
 
 fn load_merged_view(config: &Config) -> anyhow::Result<KubeConfigView> {
-    KubeConfigView::load_merged(&config.kubeconfig_paths)
-        .context("failed to load kubeconfig")
+    KubeConfigView::load_merged(&config.kubeconfig_paths).context("failed to load kubeconfig")
 }
 
 fn cmd_list_or_interactive(config: &Config) -> anyhow::Result<()> {
@@ -486,8 +481,7 @@ fn cmd_delete(config: &Config, target: &str) -> anyhow::Result<()> {
     let write_path = primary_kubeconfig(config)?;
 
     let result = if target == "." {
-        mutate::delete_current_context(write_path)
-            .context("failed to delete current context")?
+        mutate::delete_current_context(write_path).context("failed to delete current context")?
     } else {
         mutate::delete_context(write_path, target)
             .with_context(|| format!("failed to delete context {target:?}"))?
@@ -587,10 +581,7 @@ fn ns_cmd_unset(config: &Config) -> anyhow::Result<()> {
     let write_path = primary_kubeconfig(config)?;
     let result = crate::namespace::switch::unset_namespace(write_path)
         .context("failed to unset namespace")?;
-    eprintln!(
-        "Active namespace unset (was \"{}\").",
-        result.previous
-    );
+    eprintln!("Active namespace unset (was \"{}\").", result.previous);
     Ok(())
 }
 
@@ -606,8 +597,8 @@ fn ns_cmd_list_or_interactive(config: &Config) -> anyhow::Result<()> {
     let current_ns = current_namespace(&view).unwrap_or_default();
 
     let write_path = primary_kubeconfig(config)?;
-    let namespaces = crate::namespace::list::list_namespaces(write_path)
-        .context("failed to list namespaces")?;
+    let namespaces =
+        crate::namespace::list::list_namespaces(write_path).context("failed to list namespaces")?;
 
     for ns in &namespaces {
         if ns == &current_ns {
@@ -625,8 +616,8 @@ fn ns_cmd_interactive(config: &Config, use_fzf: bool) -> anyhow::Result<()> {
     let current_ns = current_namespace(&view).unwrap_or_default();
 
     let write_path = primary_kubeconfig(config)?;
-    let namespaces = crate::namespace::list::list_namespaces(write_path)
-        .context("failed to list namespaces")?;
+    let namespaces =
+        crate::namespace::list::list_namespaces(write_path).context("failed to list namespaces")?;
 
     let picker_items: Vec<PickerItem> = namespaces
         .iter()
@@ -706,9 +697,7 @@ mod tests {
     }
 
     fn expect_err(input: &[&str]) -> String {
-        parse(input)
-            .expect_err("should fail to parse")
-            .to_string()
+        parse(input).expect_err("should fail to parse").to_string()
     }
 
     // -- No args -> List --
@@ -733,7 +722,10 @@ mod tests {
     #[test]
     fn current_rejects_extra_args() {
         let err = expect_err(&["-c", "foo"]);
-        assert!(err.contains("does not accept additional arguments"), "{err}");
+        assert!(
+            err.contains("does not accept additional arguments"),
+            "{err}"
+        );
     }
 
     // -- Unset --
@@ -751,7 +743,10 @@ mod tests {
     #[test]
     fn unset_rejects_extra_args() {
         let err = expect_err(&["-u", "foo"]);
-        assert!(err.contains("does not accept additional arguments"), "{err}");
+        assert!(
+            err.contains("does not accept additional arguments"),
+            "{err}"
+        );
     }
 
     // -- Delete --
@@ -798,7 +793,10 @@ mod tests {
     #[test]
     fn dash_rejects_extra_args() {
         let err = expect_err(&["-", "foo"]);
-        assert!(err.contains("does not accept additional arguments"), "{err}");
+        assert!(
+            err.contains("does not accept additional arguments"),
+            "{err}"
+        );
     }
 
     // -- Switch --
@@ -876,7 +874,10 @@ mod tests {
     #[test]
     fn fzf_rejects_extra_args() {
         let err = expect_err(&["--fzf", "foo"]);
-        assert!(err.contains("does not accept additional arguments"), "{err}");
+        assert!(
+            err.contains("does not accept additional arguments"),
+            "{err}"
+        );
     }
 
     // -- Unknown flags --
@@ -929,7 +930,14 @@ mod tests {
 
     #[test]
     fn pick_with_all_flags() {
-        let cmd = expect_cmd(&["pick", "--switch", "--kubeconfig", "/tmp/cfg", "--current", "dev"]);
+        let cmd = expect_cmd(&[
+            "pick",
+            "--switch",
+            "--kubeconfig",
+            "/tmp/cfg",
+            "--current",
+            "dev",
+        ]);
         assert_eq!(
             cmd,
             Command::Pick(PickArgs {
@@ -1018,7 +1026,10 @@ mod tests {
     #[test]
     fn ns_current_rejects_extra_args() {
         let err = expect_ns_err(&["-c", "foo"]);
-        assert!(err.contains("does not accept additional arguments"), "{err}");
+        assert!(
+            err.contains("does not accept additional arguments"),
+            "{err}"
+        );
     }
 
     // -- Unset --
@@ -1036,7 +1047,10 @@ mod tests {
     #[test]
     fn ns_unset_rejects_extra_args() {
         let err = expect_ns_err(&["-u", "foo"]);
-        assert!(err.contains("does not accept additional arguments"), "{err}");
+        assert!(
+            err.contains("does not accept additional arguments"),
+            "{err}"
+        );
     }
 
     // -- Swap previous --
@@ -1049,7 +1063,10 @@ mod tests {
     #[test]
     fn ns_dash_rejects_extra_args() {
         let err = expect_ns_err(&["-", "foo"]);
-        assert!(err.contains("does not accept additional arguments"), "{err}");
+        assert!(
+            err.contains("does not accept additional arguments"),
+            "{err}"
+        );
     }
 
     // -- Switch --
@@ -1139,7 +1156,10 @@ mod tests {
     #[test]
     fn ns_fzf_rejects_extra_args() {
         let err = expect_ns_err(&["--fzf", "foo"]);
-        assert!(err.contains("does not accept additional arguments"), "{err}");
+        assert!(
+            err.contains("does not accept additional arguments"),
+            "{err}"
+        );
     }
 
     // -- Help and version --
