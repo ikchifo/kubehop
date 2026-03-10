@@ -7,6 +7,6 @@ pub mod current;
 pub mod state;
 pub mod switch;
 pub mod mutate;
-mod yaml_helpers;
+pub(crate) mod yaml_helpers;
 
 pub use error::ContextError;

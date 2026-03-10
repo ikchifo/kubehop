@@ -14,7 +14,7 @@ const KEY_CONTEXTS: &str = "contexts";
 const KEY_NAME: &str = "name";
 
 /// Load a kubeconfig file into a generic YAML document.
-pub(super) fn load_yaml_doc(path: &Path) -> Result<Value, ContextError> {
+pub(crate) fn load_yaml_doc(path: &Path) -> Result<Value, ContextError> {
     let raw = fs::read_to_string(path).map_err(KubeconfigError::Read)?;
     serde_yaml::from_str(&raw)
         .map_err(KubeconfigError::Parse)
@@ -22,7 +22,7 @@ pub(super) fn load_yaml_doc(path: &Path) -> Result<Value, ContextError> {
 }
 
 /// Serialize and write a YAML document back to disk.
-pub(super) fn write_yaml_doc(path: &Path, doc: &Value) -> Result<(), ContextError> {
+pub(crate) fn write_yaml_doc(path: &Path, doc: &Value) -> Result<(), ContextError> {
     let out = serde_yaml::to_string(doc).map_err(KubeconfigError::Parse)?;
     fs::write(path, out).map_err(KubeconfigError::Write)?;
     Ok(())
@@ -50,7 +50,7 @@ pub(super) fn validate_target_exists(doc: &Value, target: &str) -> Result<(), Co
 }
 
 /// Extract the `current-context` value from the document.
-pub(super) fn read_current_context(doc: &Value) -> Option<String> {
+pub(crate) fn read_current_context(doc: &Value) -> Option<String> {
     doc.get(KEY_CURRENT_CONTEXT)
         .and_then(Value::as_str)
         .map(String::from)
