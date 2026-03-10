@@ -26,6 +26,7 @@ USAGE:
   kubectx --fzf             : use external fzf for interactive selection
   kubectx pick [--switch] [--kubeconfig <path>] [--current <ctx>]
                             : interactive picker (k9s plugin)
+  kubectx --completion SHELL : output shell completion (bash, zsh, fish)
   kubectx -h, --help        : show this help
   kubectx -V, --version     : show version";
 
@@ -42,6 +43,7 @@ pub(crate) enum Command {
     Unset,
     InteractiveFzf,
     Pick(PickArgs),
+    Completion { shell: crate::completion::Shell },
 }
 
 impl Command {
@@ -118,6 +120,21 @@ pub(crate) fn parse_args(args: &[String]) -> anyhow::Result<ParseResult> {
         "-" => {
             ensure_no_extra(args, "-")?;
             Ok(ParseResult::Run(Command::SwapPrevious))
+        }
+        "--completion" => {
+            let shell_name = args
+                .get(1)
+                .map(String::as_str)
+                .ok_or_else(|| {
+                    anyhow::anyhow!("--completion requires a shell name (bash, zsh, fish)")
+                })?;
+            if args.len() > 2 {
+                bail!("--completion takes exactly one argument");
+            }
+            let shell = shell_name
+                .parse::<crate::completion::Shell>()
+                .map_err(|e| anyhow::anyhow!("{e}"))?;
+            Ok(ParseResult::Run(Command::Completion { shell }))
         }
         "pick" => {
             let pick_args = k9s::parse_pick_args(&args[1..])?;
@@ -212,14 +229,30 @@ pub fn execute(mode: ToolMode, config: &Config) -> anyhow::Result<()> {
     }
 
     let user_args: Vec<String> = std::env::args().skip(1).collect();
-    let result = parse_args(&user_args)?;
+
+    let benchmark = user_args.iter().any(|a| a == "--benchmark");
+    let filtered_args: Vec<String> = if benchmark {
+        user_args.into_iter().filter(|a| a != "--benchmark").collect()
+    } else {
+        user_args
+    };
+
+    let result = parse_args(&filtered_args)?;
 
     let command = match result {
         ParseResult::Run(cmd) => cmd,
         ParseResult::Exit => return Ok(()),
     };
 
-    dispatch_command(command, config)
+    if benchmark {
+        let start = std::time::Instant::now();
+        let result = dispatch_command(command, config);
+        let elapsed = start.elapsed();
+        eprintln!("[benchmark] {elapsed:?}");
+        result
+    } else {
+        dispatch_command(command, config)
+    }
 }
 
 fn dispatch_command(command: Command, config: &Config) -> anyhow::Result<()> {
@@ -240,6 +273,10 @@ fn dispatch_command(command: Command, config: &Config) -> anyhow::Result<()> {
         Command::Unset => cmd_unset(config),
         Command::InteractiveFzf => cmd_interactive(config, true),
         Command::Pick(ref pick_args) => k9s::execute_pick(pick_args, config),
+        Command::Completion { shell } => {
+            print!("{}", crate::completion::generate(shell));
+            Ok(())
+        }
     }
 }
 
@@ -618,6 +655,12 @@ mod tests {
         assert!(err.contains("unknown flag"), "{err}");
     }
 
+    #[test]
+    fn benchmark_flag_unknown_to_parser() {
+        let err = expect_err(&["--benchmark"]);
+        assert!(err.contains("unknown flag"), "{err}");
+    }
+
     // -- Pick subcommand --
 
     #[test]
@@ -663,5 +706,29 @@ mod tests {
     fn pick_with_unknown_flag_errors() {
         let err = expect_err(&["pick", "--bogus"]);
         assert!(err.contains("unknown pick flag"), "{err}");
+    }
+
+    // -- Completion --
+
+    #[test]
+    fn completion_bash_parses() {
+        assert_eq!(
+            expect_cmd(&["--completion", "bash"]),
+            Command::Completion {
+                shell: crate::completion::Shell::Bash
+            }
+        );
+    }
+
+    #[test]
+    fn completion_without_shell_is_error() {
+        let err = expect_err(&["--completion"]);
+        assert!(err.contains("requires a shell name"), "{err}");
+    }
+
+    #[test]
+    fn completion_with_extra_args_is_error() {
+        let err = expect_err(&["--completion", "bash", "extra"]);
+        assert!(err.contains("takes exactly one argument"), "{err}");
     }
 }

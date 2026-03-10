@@ -6,6 +6,7 @@
 //! fuzzy picker.
 
 pub mod cli;
+pub mod completion;
 pub mod context;
 pub mod dispatch;
 pub mod integration;
