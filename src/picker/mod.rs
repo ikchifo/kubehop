@@ -5,6 +5,7 @@ mod score;
 mod tui;
 pub mod fzf;
 
+pub use score::{ScoredItem, score_items};
 pub use tui::pick_inline;
 
 /// A single item in the picker list.

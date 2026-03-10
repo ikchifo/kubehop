@@ -6,7 +6,7 @@ use nucleo_matcher::{Config, Matcher, Utf32Str};
 
 /// A scored item with its original index, score, and matched character positions.
 #[derive(Debug, Clone)]
-pub(super) struct ScoredItem {
+pub struct ScoredItem {
     /// Index into the original items slice.
     pub index: usize,
     /// Match score (higher is better). Zero when the query is empty.
@@ -20,7 +20,8 @@ pub(super) struct ScoredItem {
 /// When `query` is empty, returns every item in its original order with a
 /// zero score and no match indices. Otherwise returns only matching items,
 /// sorted by score descending.
-pub(super) fn score_items(items: &[super::PickerItem], query: &str) -> Vec<ScoredItem> {
+#[must_use]
+pub fn score_items(items: &[super::PickerItem], query: &str) -> Vec<ScoredItem> {
     if query.is_empty() {
         return items
             .iter()
