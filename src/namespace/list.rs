@@ -73,7 +73,12 @@ pub fn namespace_exists(kubeconfig_path: &Path, namespace: &str) -> Result<(), N
         })?;
 
     if !output.status.success() {
-        return Err(NamespaceError::NotFound(namespace.to_owned()));
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stderr_lower = stderr.to_lowercase();
+        if stderr_lower.contains("not found") || stderr_lower.contains("notfound") {
+            return Err(NamespaceError::NotFound(namespace.to_owned()));
+        }
+        return Err(NamespaceError::ListFailed(stderr.trim().to_owned()));
     }
 
     Ok(())

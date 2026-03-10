@@ -4,8 +4,7 @@
 use crate::kubeconfig::KubeConfigView;
 
 use super::error::NamespaceError;
-
-const DEFAULT_NAMESPACE: &str = "default";
+use super::DEFAULT_NAMESPACE;
 
 /// Resolve the active namespace for the current context.
 ///

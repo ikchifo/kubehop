@@ -555,12 +555,6 @@ fn ns_cmd_current(config: &Config) -> anyhow::Result<()> {
 
 fn ns_cmd_switch(config: &Config, target: &str, force: bool) -> anyhow::Result<()> {
     let write_path = primary_kubeconfig(config)?;
-    let view = load_merged_view(config)?;
-
-    let ctx_name = view
-        .current_context()
-        .ok_or_else(|| anyhow::anyhow!("no current context set"))?
-        .to_owned();
 
     if !force {
         crate::namespace::list::namespace_exists(write_path, target)
@@ -570,7 +564,7 @@ fn ns_cmd_switch(config: &Config, target: &str, force: bool) -> anyhow::Result<(
     let result = crate::namespace::switch::switch_namespace(write_path, target)
         .with_context(|| format!("failed to switch to namespace {target:?}"))?;
 
-    let ns_state = NsStateFile::new(&config.cache_dir, &ctx_name);
+    let ns_state = NsStateFile::new(&config.cache_dir, &result.context);
     if let Err(e) = ns_state.save(&result.previous) {
         eprintln!("warning: could not save previous namespace state: {e}");
     }
@@ -596,9 +590,12 @@ fn ns_cmd_swap_previous(config: &Config) -> anyhow::Result<()> {
 
 fn ns_cmd_unset(config: &Config) -> anyhow::Result<()> {
     let write_path = primary_kubeconfig(config)?;
-    let _result = crate::namespace::switch::unset_namespace(write_path)
+    let result = crate::namespace::switch::unset_namespace(write_path)
         .context("failed to unset namespace")?;
-    eprintln!("Active namespace is \"default\".");
+    eprintln!(
+        "Active namespace unset (was \"{}\").",
+        result.previous
+    );
     Ok(())
 }
 
@@ -651,7 +648,7 @@ fn ns_cmd_interactive(config: &Config, use_fzf: bool) -> anyhow::Result<()> {
     };
 
     match result {
-        PickerResult::Selected(name) => ns_cmd_switch(config, &name, false),
+        PickerResult::Selected(name) => ns_cmd_switch(config, &name, true),
         PickerResult::Cancelled => Ok(()),
     }
 }

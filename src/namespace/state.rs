@@ -69,11 +69,10 @@ impl NsStateFile {
 }
 
 fn sanitize_context_name(name: &str) -> String {
-    if cfg!(windows) {
-        name.replace(':', "__")
-    } else {
-        name.to_owned()
-    }
+    name.replace('/', "__")
+        .replace('\\', "__")
+        .replace(':', "__")
+        .replace('\0', "")
 }
 
 #[cfg(test)]

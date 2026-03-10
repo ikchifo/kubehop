@@ -37,6 +37,7 @@ impl NamespaceError {
     pub(super) fn from_context_err(err: ContextError) -> Self {
         match err {
             ContextError::Kubeconfig(e) => Self::Kubeconfig(e),
+            ContextError::State(e) => Self::State(e),
             other => Self::ListFailed(other.to_string()),
         }
     }

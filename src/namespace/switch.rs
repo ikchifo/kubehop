@@ -6,9 +6,8 @@ use std::path::Path;
 use serde_yaml::Value;
 
 use super::error::NamespaceError;
+use super::DEFAULT_NAMESPACE;
 use crate::context::yaml_helpers::{load_yaml_doc, read_current_context, write_yaml_doc};
-
-const DEFAULT_NAMESPACE: &str = "default";
 
 /// Outcome of a namespace switch operation.
 #[derive(Debug, Clone, PartialEq, Eq)]
