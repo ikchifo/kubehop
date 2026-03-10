@@ -16,8 +16,11 @@ dependencies at runtime.
 
 ## Features
 
-- **Built-in fuzzy picker** powered by nucleo (from the Helix
-  editor) and ratatui -- no fzf required
+- **Built-in fuzzy picker** powered by
+  [nucleo](https://github.com/helix-editor/nucleo) (from the
+  [Helix](https://helix-editor.com/) editor) and
+  [ratatui](https://github.com/ratatui/ratatui) -- no fzf
+  required
 - **Single kubeconfig parse** per operation, held in memory
   for the entire flow
 - **Selective parsing** -- reads only `current-context` and
@@ -28,7 +31,8 @@ dependencies at runtime.
 - **Sub-50ms startup** on standard kubeconfig files
 - **k9s plugin** support via a `pick` subcommand
 - **Shell completions** for bash, zsh, and fish
-- Optional **fzf fallback** via `--fzf` flag
+- Optional **[fzf](https://github.com/junegunn/fzf)
+  fallback** via `--fzf` flag
 
 ## Install
 
@@ -138,21 +142,24 @@ src/
   kubeconfig/       Selective serde parser, multi-file merge
   context/          List, switch, rename, delete, unset, state
   namespace/        List, switch, unset, per-context state
-  picker/           nucleo fuzzy scoring + ratatui inline TUI
+  picker/           Fuzzy scoring (nucleo) + inline TUI (ratatui)
   integration/      k9s plugin subcommand
 ```
 
 Design decisions:
 
-- **Selective serde** for reads, full `serde_yaml::Value`
-  round-trip for writes (so edits never drop unknown fields)
+- **Selective [serde](https://serde.rs/)** for reads, full
+  [`serde_yaml::Value`](https://docs.rs/serde_yaml) round-trip
+  for writes (so edits never drop unknown fields)
 - **No async runtime** -- all operations are local file I/O
   on small files
-- **`thiserror`** in library modules, **`anyhow`** in the
-  CLI layer
+- **[`thiserror`](https://docs.rs/thiserror)** in library
+  modules,
+  **[`anyhow`](https://docs.rs/anyhow)** in the CLI layer
 - **State file compatibility** -- stores previous-context
-  state at the same path as kubectx, so `khop -` works for
-  users migrating from kubectx
+  state at the same path as
+  [kubectx](https://github.com/ahmetb/kubectx), so `khop -`
+  works for users migrating from kubectx
 
 ## License
 
