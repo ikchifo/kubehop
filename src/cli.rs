@@ -9,6 +9,7 @@ use crate::context::state::StateFile;
 use crate::context::{current, list, mutate, switch};
 use crate::dispatch::ToolMode;
 use crate::kubeconfig::KubeConfigView;
+use crate::picker::{self, PickerItem, PickerResult};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -21,6 +22,7 @@ USAGE:
   kubectx -d, --delete NAME : delete context NAME (or '.' for current)
   kubectx <NEW>=<OLD>       : rename context <OLD> to <NEW>
   kubectx -u, --unset       : unset the current context
+  kubectx --fzf             : use external fzf for interactive selection
   kubectx -h, --help        : show this help
   kubectx -V, --version     : show version";
 
@@ -35,6 +37,7 @@ pub(crate) enum Command {
     Delete { target: String },
     Rename { old: String, new_name: String },
     Unset,
+    InteractiveFzf,
 }
 
 /// Sentinel returned by `parse_args` when the user requested `--help`
@@ -87,6 +90,10 @@ pub(crate) fn parse_args(args: &[String]) -> anyhow::Result<ParseResult> {
             Ok(ParseResult::Run(Command::Delete {
                 target: target.to_owned(),
             }))
+        }
+        "--fzf" => {
+            ensure_no_extra(args, "--fzf")?;
+            Ok(ParseResult::Run(Command::InteractiveFzf))
         }
         "-" => {
             ensure_no_extra(args, "-")?;
@@ -193,13 +200,14 @@ pub fn execute(mode: ToolMode, config: &Config) -> anyhow::Result<()> {
 
 fn dispatch_command(command: Command, config: &Config) -> anyhow::Result<()> {
     match command {
-        Command::List => cmd_list(config),
+        Command::List => cmd_list_or_interactive(config),
         Command::Current => cmd_current(config),
         Command::Switch { target } => cmd_switch(config, &target),
         Command::SwapPrevious => cmd_swap_previous(config),
         Command::Delete { target } => cmd_delete(config, &target),
         Command::Rename { old, new_name } => cmd_rename(config, &old, &new_name),
         Command::Unset => cmd_unset(config),
+        Command::InteractiveFzf => cmd_interactive(config, true),
     }
 }
 
@@ -208,7 +216,14 @@ fn load_merged_view(config: &Config) -> anyhow::Result<KubeConfigView> {
         .context("failed to load kubeconfig")
 }
 
-fn cmd_list(config: &Config) -> anyhow::Result<()> {
+fn cmd_list_or_interactive(config: &Config) -> anyhow::Result<()> {
+    let is_tty = std::io::IsTerminal::is_terminal(&std::io::stdout());
+    let ignore_fzf = std::env::var_os("KUBECTX_IGNORE_FZF").is_some();
+
+    if is_tty && !ignore_fzf {
+        return cmd_interactive(config, false);
+    }
+
     let view = load_merged_view(config)?;
     let items = list::list_contexts(&view).context("failed to list contexts")?;
 
@@ -221,6 +236,30 @@ fn cmd_list(config: &Config) -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+fn cmd_interactive(config: &Config, use_fzf: bool) -> anyhow::Result<()> {
+    let view = load_merged_view(config)?;
+    let ctx_items = list::list_contexts(&view).context("failed to list contexts")?;
+
+    let picker_items: Vec<PickerItem> = ctx_items
+        .iter()
+        .map(|i| PickerItem {
+            name: i.name.clone(),
+            is_current: i.is_current,
+        })
+        .collect();
+
+    let result = if use_fzf {
+        picker::fzf::pick_fzf(&picker_items).context("fzf picker failed")?
+    } else {
+        picker::pick_inline(&picker_items).context("interactive picker failed")?
+    };
+
+    match result {
+        PickerResult::Selected(name) => cmd_switch(config, &name),
+        PickerResult::Cancelled => Ok(()),
+    }
 }
 
 fn cmd_current(config: &Config) -> anyhow::Result<()> {
@@ -518,6 +557,19 @@ mod tests {
     #[test]
     fn version_long() {
         expect_exit(&["--version"]);
+    }
+
+    // -- Fzf flag --
+
+    #[test]
+    fn fzf_flag_produces_interactive_fzf() {
+        assert_eq!(expect_cmd(&["--fzf"]), Command::InteractiveFzf);
+    }
+
+    #[test]
+    fn fzf_rejects_extra_args() {
+        let err = expect_err(&["--fzf", "foo"]);
+        assert!(err.contains("does not accept additional arguments"), "{err}");
     }
 
     // -- Unknown flags --
