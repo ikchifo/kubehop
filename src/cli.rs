@@ -8,6 +8,7 @@ use anyhow::{bail, Context as _};
 use crate::context::state::StateFile;
 use crate::context::{current, list, mutate, switch};
 use crate::dispatch::ToolMode;
+use crate::integration::k9s::{self, PickArgs};
 use crate::kubeconfig::KubeConfigView;
 use crate::picker::{self, PickerItem, PickerResult};
 
@@ -23,6 +24,8 @@ USAGE:
   kubectx <NEW>=<OLD>       : rename context <OLD> to <NEW>
   kubectx -u, --unset       : unset the current context
   kubectx --fzf             : use external fzf for interactive selection
+  kubectx pick [--switch] [--kubeconfig <path>] [--current <ctx>]
+                            : interactive picker (k9s plugin)
   kubectx -h, --help        : show this help
   kubectx -V, --version     : show version";
 
@@ -38,6 +41,7 @@ pub(crate) enum Command {
     Rename { old: String, new_name: String },
     Unset,
     InteractiveFzf,
+    Pick(PickArgs),
 }
 
 /// Sentinel returned by `parse_args` when the user requested `--help`
@@ -98,6 +102,10 @@ pub(crate) fn parse_args(args: &[String]) -> anyhow::Result<ParseResult> {
         "-" => {
             ensure_no_extra(args, "-")?;
             Ok(ParseResult::Run(Command::SwapPrevious))
+        }
+        "pick" => {
+            let pick_args = k9s::parse_pick_args(&args[1..])?;
+            Ok(ParseResult::Run(Command::Pick(pick_args)))
         }
         arg if arg.starts_with('-') => {
             bail!("unknown flag: {arg}\nRun with --help for usage information")
@@ -208,6 +216,7 @@ fn dispatch_command(command: Command, config: &Config) -> anyhow::Result<()> {
         Command::Rename { old, new_name } => cmd_rename(config, &old, &new_name),
         Command::Unset => cmd_unset(config),
         Command::InteractiveFzf => cmd_interactive(config, true),
+        Command::Pick(ref pick_args) => k9s::execute_pick(pick_args, config),
     }
 }
 
@@ -584,5 +593,52 @@ mod tests {
     fn unknown_short_flag_is_error() {
         let err = expect_err(&["-x"]);
         assert!(err.contains("unknown flag"), "{err}");
+    }
+
+    // -- Pick subcommand --
+
+    #[test]
+    fn pick_alone_produces_default_pick_args() {
+        let cmd = expect_cmd(&["pick"]);
+        assert_eq!(
+            cmd,
+            Command::Pick(PickArgs {
+                switch: false,
+                kubeconfig: None,
+                current: None,
+            })
+        );
+    }
+
+    #[test]
+    fn pick_with_switch_flag() {
+        let cmd = expect_cmd(&["pick", "--switch"]);
+        assert_eq!(
+            cmd,
+            Command::Pick(PickArgs {
+                switch: true,
+                kubeconfig: None,
+                current: None,
+            })
+        );
+    }
+
+    #[test]
+    fn pick_with_all_flags() {
+        let cmd = expect_cmd(&["pick", "--switch", "--kubeconfig", "/tmp/cfg", "--current", "dev"]);
+        assert_eq!(
+            cmd,
+            Command::Pick(PickArgs {
+                switch: true,
+                kubeconfig: Some(std::path::PathBuf::from("/tmp/cfg")),
+                current: Some("dev".to_owned()),
+            })
+        );
+    }
+
+    #[test]
+    fn pick_with_unknown_flag_errors() {
+        let err = expect_err(&["pick", "--bogus"]);
+        assert!(err.contains("unknown pick flag"), "{err}");
     }
 }

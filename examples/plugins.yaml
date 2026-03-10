@@ -1,0 +1,10 @@
+plugins:
+  kubehop:
+    shortCut: Ctrl-K
+    description: Switch context
+    scopes:
+      - all
+    command: kubectx
+    args:
+      - pick
+      - --switch
