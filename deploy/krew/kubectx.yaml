@@ -4,7 +4,7 @@ metadata:
   name: ctx
 spec:
   version: v0.1.0
-  homepage: https://github.com/ikennao/kubehop
+  homepage: https://github.com/ikchifo/kubehop
   shortDescription: "Fast Kubernetes context switcher"
   description: |
     A fast Kubernetes context switcher written in Rust.
@@ -24,34 +24,34 @@ spec:
         matchLabels:
           os: linux
           arch: amd64
-      uri: https://github.com/ikennao/kubehop/releases/download/v0.1.0/kubectx_linux_amd64.tar.gz
+      uri: https://github.com/ikchifo/kubehop/releases/download/v0.1.0/kubectx_linux_amd64.tar.gz
       sha256: PLACEHOLDER_SHA256
       bin: kubectx
     - selector:
         matchLabels:
           os: linux
           arch: arm64
-      uri: https://github.com/ikennao/kubehop/releases/download/v0.1.0/kubectx_linux_arm64.tar.gz
+      uri: https://github.com/ikchifo/kubehop/releases/download/v0.1.0/kubectx_linux_arm64.tar.gz
       sha256: PLACEHOLDER_SHA256
       bin: kubectx
     - selector:
         matchLabels:
           os: darwin
           arch: amd64
-      uri: https://github.com/ikennao/kubehop/releases/download/v0.1.0/kubectx_darwin_amd64.tar.gz
+      uri: https://github.com/ikchifo/kubehop/releases/download/v0.1.0/kubectx_darwin_amd64.tar.gz
       sha256: PLACEHOLDER_SHA256
       bin: kubectx
     - selector:
         matchLabels:
           os: darwin
           arch: arm64
-      uri: https://github.com/ikennao/kubehop/releases/download/v0.1.0/kubectx_darwin_arm64.tar.gz
+      uri: https://github.com/ikchifo/kubehop/releases/download/v0.1.0/kubectx_darwin_arm64.tar.gz
       sha256: PLACEHOLDER_SHA256
       bin: kubectx
     - selector:
         matchLabels:
           os: windows
           arch: amd64
-      uri: https://github.com/ikennao/kubehop/releases/download/v0.1.0/kubectx_windows_amd64.tar.gz
+      uri: https://github.com/ikchifo/kubehop/releases/download/v0.1.0/kubectx_windows_amd64.tar.gz
       sha256: PLACEHOLDER_SHA256
       bin: kubectx.exe

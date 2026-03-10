@@ -1,5 +1,9 @@
 # kubehop
 
+[![CI](https://github.com/ikchifo/kubehop/actions/workflows/ci.yml/badge.svg)](https://github.com/ikchifo/kubehop/actions/workflows/ci.yml)
+[![Crates.io](https://img.shields.io/crates/v/khop.svg)](https://crates.io/crates/khop)
+[![License](https://img.shields.io/crates/l/khop.svg)](LICENSE)
+
 Fast Kubernetes context and namespace switcher, written in
 Rust. Built-in fuzzy finder, sub-50ms startup, no external
 dependencies at runtime.

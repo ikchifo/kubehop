@@ -4,10 +4,13 @@ version = "0.1.0"
 edition = "2021"
 description = "Fast Kubernetes context and namespace switcher"
 license = "Apache-2.0"
+homepage = "https://github.com/ikchifo/kubehop"
 repository = "https://github.com/ikchifo/kubehop"
 keywords = ["kubernetes", "kubectl", "context", "kubectx"]
 categories = ["command-line-utilities"]
 readme = "README.md"
+rust-version = "1.85"
+exclude = [".github/", "docs/", "tests/", "deploy/", "examples/"]
 
 [dependencies]
 anyhow = "1"
@@ -35,6 +38,11 @@ opt-level = 3
 inherits = "release"
 debug = true
 strip = false
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"
 
 [lints.rust]
 missing_debug_implementations = "warn"
