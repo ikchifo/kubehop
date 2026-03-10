@@ -44,6 +44,22 @@ pub(crate) enum Command {
     Pick(PickArgs),
 }
 
+impl Command {
+    /// Whether this command would modify the active context or kubeconfig.
+    const fn modifies_context(&self) -> bool {
+        matches!(
+            self,
+            Self::Switch { .. }
+                | Self::SwapPrevious
+                | Self::Delete { .. }
+                | Self::Rename { .. }
+                | Self::Unset
+                | Self::InteractiveFzf
+                | Self::Pick(_)
+        )
+    }
+}
+
 /// Sentinel returned by `parse_args` when the user requested `--help`
 /// or `--version` and the output was already printed.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -207,6 +223,13 @@ pub fn execute(mode: ToolMode, config: &Config) -> anyhow::Result<()> {
 }
 
 fn dispatch_command(command: Command, config: &Config) -> anyhow::Result<()> {
+    if config.isolated_shell && command.modifies_context() {
+        bail!(
+            "context switching is disabled in this shell \
+             (KUBECTX_ISOLATED_SHELL=1)"
+        );
+    }
+
     match command {
         Command::List => cmd_list_or_interactive(config),
         Command::Current => cmd_current(config),
@@ -229,7 +252,7 @@ fn cmd_list_or_interactive(config: &Config) -> anyhow::Result<()> {
     let is_tty = std::io::IsTerminal::is_terminal(&std::io::stdout());
     let ignore_fzf = std::env::var_os("KUBECTX_IGNORE_FZF").is_some();
 
-    if is_tty && !ignore_fzf {
+    if is_tty && !ignore_fzf && !config.isolated_shell {
         return cmd_interactive(config, false);
     }
 
