@@ -7,6 +7,7 @@ license = "Apache-2.0"
 repository = "https://github.com/ikennao/kubehop"
 keywords = ["kubernetes", "kubectl", "context", "kubectx"]
 categories = ["command-line-utilities"]
+readme = "README.md"
 
 [dependencies]
 anyhow = "1"
@@ -49,6 +50,7 @@ pedantic = { level = "warn", priority = -1 }
 perf = { level = "warn", priority = -1 }
 style = { level = "warn", priority = -1 }
 suspicious = { level = "warn", priority = -1 }
+multiple_crate_versions = "allow"
 undocumented_unsafe_blocks = "warn"
 
 [dev-dependencies]

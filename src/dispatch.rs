@@ -15,6 +15,7 @@ pub enum ToolMode {
 ///
 /// Extracts the filename component from the path and matches against
 /// known binary names. Defaults to `Kubectx` for unrecognized names.
+#[must_use]
 pub fn mode_from_argv0(argv0: &str) -> ToolMode {
     let binary_name = std::path::Path::new(argv0)
         .file_name()

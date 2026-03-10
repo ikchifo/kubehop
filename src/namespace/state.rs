@@ -69,9 +69,7 @@ impl NsStateFile {
 }
 
 fn sanitize_context_name(name: &str) -> String {
-    name.replace('/', "__")
-        .replace('\\', "__")
-        .replace(':', "__")
+    name.replace(['/', '\\', ':'], "__")
         .replace('\0', "")
 }
 

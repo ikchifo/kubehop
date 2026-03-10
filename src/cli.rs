@@ -464,7 +464,7 @@ fn cmd_current(config: &Config) -> anyhow::Result<()> {
 fn cmd_switch(config: &Config, target: &str) -> anyhow::Result<()> {
     let write_path = primary_kubeconfig(config)?;
 
-    let result = switch::switch_context(&write_path, target)
+    let result = switch::switch_context(write_path, target)
         .with_context(|| format!("failed to switch to context {target:?}"))?;
 
     if let Some(ref prev) = result.previous {
@@ -512,7 +512,7 @@ fn cmd_delete(config: &Config, target: &str) -> anyhow::Result<()> {
 
 fn cmd_rename(config: &Config, old: &str, new_name: &str) -> anyhow::Result<()> {
     let write_path = primary_kubeconfig(config)?;
-    let result = mutate::rename_context(&write_path, old, new_name)
+    let result = mutate::rename_context(write_path, old, new_name)
         .with_context(|| format!("failed to rename context {old:?} to {new_name:?}"))?;
 
     eprintln!(
@@ -524,7 +524,7 @@ fn cmd_rename(config: &Config, old: &str, new_name: &str) -> anyhow::Result<()> 
 
 fn cmd_unset(config: &Config) -> anyhow::Result<()> {
     let write_path = primary_kubeconfig(config)?;
-    let result = mutate::unset_context(&write_path).context("failed to unset current context")?;
+    let result = mutate::unset_context(write_path).context("failed to unset current context")?;
 
     match result.previous {
         Some(prev) => eprintln!("Active context unset (was \"{prev}\")."),

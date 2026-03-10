@@ -6,6 +6,7 @@
 
 use std::io::{Stderr, stderr};
 
+use crossterm::cursor::SetCursorStyle;
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 use ratatui::backend::CrosstermBackend;
@@ -34,6 +35,7 @@ const PROMPT: &str = "> ";
 /// Returns an error if terminal setup, rendering, or event reading fails.
 pub fn pick_inline(items: &[PickerItem]) -> anyhow::Result<PickerResult> {
     enable_raw_mode()?;
+    crossterm::execute!(stderr(), SetCursorStyle::BlinkingBlock)?;
 
     let backend = CrosstermBackend::new(stderr());
     let mut terminal = Terminal::with_options(
@@ -45,6 +47,7 @@ pub fn pick_inline(items: &[PickerItem]) -> anyhow::Result<PickerResult> {
 
     let result = run_picker_loop(&mut terminal, items);
 
+    crossterm::execute!(stderr(), SetCursorStyle::DefaultUserShape)?;
     disable_raw_mode()?;
     terminal.clear()?;
 
@@ -144,8 +147,12 @@ fn run_picker_loop(
 fn render(frame: &mut ratatui::Frame, items: &[PickerItem], state: &mut PickerState) {
     let area = frame.area();
 
-    let [list_area, input_area] =
-        Layout::vertical([Constraint::Fill(1), Constraint::Length(1)]).areas(area);
+    let [list_area, status_area, input_area] = Layout::vertical([
+        Constraint::Fill(1),
+        Constraint::Length(1),
+        Constraint::Length(1),
+    ])
+    .areas(area);
 
     let highlight_style = Style::default()
         .fg(Color::Green)
@@ -184,9 +191,17 @@ fn render(frame: &mut ratatui::Frame, items: &[PickerItem], state: &mut PickerSt
 
     frame.render_stateful_widget(list, list_area, &mut state.list_state);
 
-    let input_text = format!("{PROMPT}{} [{match_count}/{total}]", state.query);
+    let status_text = format!("  [{match_count}/{total}]");
+    let status = Paragraph::new(status_text).style(Style::default().fg(Color::DarkGray));
+    frame.render_widget(status, status_area);
+
+    let input_text = format!("{PROMPT}{}", state.query);
     let input = Paragraph::new(input_text).style(Style::default().fg(Color::Yellow));
     frame.render_widget(input, input_area);
+
+    #[allow(clippy::cast_possible_truncation)]
+    let cursor_x = input_area.x + PROMPT.len() as u16 + state.query.len() as u16;
+    frame.set_cursor_position((cursor_x, input_area.y));
 }
 
 /// Build spans for a name string with highlighted match positions.
