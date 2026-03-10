@@ -10,9 +10,23 @@ use crate::context::{current, list, mutate, switch};
 use crate::dispatch::ToolMode;
 use crate::integration::k9s::{self, PickArgs};
 use crate::kubeconfig::KubeConfigView;
+use crate::namespace::current::current_namespace;
+use crate::namespace::state::NsStateFile;
 use crate::picker::{self, PickerItem, PickerResult};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+const KUBENS_HELP_TEXT: &str = "\
+USAGE:
+  kubens                    : list the namespaces (interactive picker when a TTY)
+  kubens <NAME>             : switch to namespace <NAME>
+  kubens -                  : switch to the previous namespace
+  kubens -c, --current      : show the current namespace
+  kubens -u, --unset        : reset namespace to default
+  kubens -f, --force <NAME> : switch without checking namespace exists
+  kubens --fzf              : use external fzf for interactive selection
+  kubens -h, --help         : show this help
+  kubens -V, --version      : show version";
 
 const HELP_TEXT: &str = "\
 USAGE:
@@ -67,6 +81,26 @@ impl Command {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ParseResult {
     Run(Command),
+    Exit,
+}
+
+/// Parsed namespace command to execute.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub(crate) enum NsCommand {
+    List,
+    Switch { target: String, force: bool },
+    SwapPrevious,
+    Current,
+    Unset,
+    InteractiveFzf,
+}
+
+/// Sentinel returned by `parse_ns_args` when the user requested `--help`
+/// or `--version` and the output was already printed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum NsParseResult {
+    Run(NsCommand),
     Exit,
 }
 
@@ -177,6 +211,79 @@ fn ensure_no_extra(args: &[String], flag: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Parse kubens CLI arguments into a [`NsCommand`].
+///
+/// Prints help or version to stdout when requested and returns
+/// [`NsParseResult::Exit`] so the caller can exit cleanly.
+pub(crate) fn parse_ns_args(args: &[String]) -> anyhow::Result<NsParseResult> {
+    if args.is_empty() {
+        return Ok(NsParseResult::Run(NsCommand::List));
+    }
+
+    let first = args[0].as_str();
+
+    match first {
+        "-h" | "--help" => {
+            println!("{KUBENS_HELP_TEXT}");
+            Ok(NsParseResult::Exit)
+        }
+        "-V" | "--version" => {
+            println!("kubens {VERSION}");
+            Ok(NsParseResult::Exit)
+        }
+        "-c" | "--current" => {
+            ensure_no_extra(args, first)?;
+            Ok(NsParseResult::Run(NsCommand::Current))
+        }
+        "-u" | "--unset" => {
+            ensure_no_extra(args, first)?;
+            Ok(NsParseResult::Run(NsCommand::Unset))
+        }
+        "--fzf" => {
+            ensure_no_extra(args, "--fzf")?;
+            Ok(NsParseResult::Run(NsCommand::InteractiveFzf))
+        }
+        "-" => {
+            ensure_no_extra(args, "-")?;
+            Ok(NsParseResult::Run(NsCommand::SwapPrevious))
+        }
+        "-f" | "--force" => {
+            let target = args
+                .get(1)
+                .map(String::as_str)
+                .filter(|s| !s.is_empty())
+                .ok_or_else(|| anyhow::anyhow!("{first} requires a namespace name"))?;
+            if args.len() > 2 {
+                bail!("{first} takes exactly one argument");
+            }
+            Ok(NsParseResult::Run(NsCommand::Switch {
+                target: target.to_owned(),
+                force: true,
+            }))
+        }
+        arg if arg.starts_with('-') => {
+            bail!("unknown flag: {arg}\nRun with --help for usage information")
+        }
+        positional => {
+            // Check for trailing -f / --force after the name
+            let force = match args.get(1).map(String::as_str) {
+                Some("-f" | "--force") => true,
+                Some(other) => {
+                    bail!("unexpected extra argument after {positional:?}: {other:?}");
+                }
+                None => false,
+            };
+            if args.len() > 2 {
+                bail!("unexpected extra arguments after {positional:?}");
+            }
+            Ok(NsParseResult::Run(NsCommand::Switch {
+                target: positional.to_owned(),
+                force,
+            }))
+        }
+    }
+}
+
 /// Top-level application configuration resolved from the environment.
 #[derive(Debug, Clone)]
 pub struct Config {
@@ -223,36 +330,52 @@ impl Config {
 ///
 /// Returns an error if command execution fails.
 pub fn execute(mode: ToolMode, config: &Config) -> anyhow::Result<()> {
-    if mode == ToolMode::Kubens {
-        eprintln!("kubens mode not yet implemented");
-        return Ok(());
-    }
-
     let user_args: Vec<String> = std::env::args().skip(1).collect();
 
     let benchmark = user_args.iter().any(|a| a == "--benchmark");
     let filtered_args: Vec<String> = if benchmark {
-        user_args.into_iter().filter(|a| a != "--benchmark").collect()
+        user_args
+            .into_iter()
+            .filter(|a| a != "--benchmark")
+            .collect()
     } else {
         user_args
     };
 
-    let result = parse_args(&filtered_args)?;
-
-    let command = match result {
-        ParseResult::Run(cmd) => cmd,
-        ParseResult::Exit => return Ok(()),
-    };
-
-    if benchmark {
-        let start = std::time::Instant::now();
-        let result = dispatch_command(command, config);
-        let elapsed = start.elapsed();
-        eprintln!("[benchmark] {elapsed:?}");
-        result
-    } else {
-        dispatch_command(command, config)
+    match mode {
+        ToolMode::Kubectx => {
+            let result = parse_args(&filtered_args)?;
+            let command = match result {
+                ParseResult::Run(cmd) => cmd,
+                ParseResult::Exit => return Ok(()),
+            };
+            if benchmark {
+                run_benchmarked(|| dispatch_command(command, config))
+            } else {
+                dispatch_command(command, config)
+            }
+        }
+        ToolMode::Kubens => {
+            let result = parse_ns_args(&filtered_args)?;
+            let command = match result {
+                NsParseResult::Run(cmd) => cmd,
+                NsParseResult::Exit => return Ok(()),
+            };
+            if benchmark {
+                run_benchmarked(|| dispatch_ns_command(command, config))
+            } else {
+                dispatch_ns_command(command, config)
+            }
+        }
     }
+}
+
+fn run_benchmarked(f: impl FnOnce() -> anyhow::Result<()>) -> anyhow::Result<()> {
+    let start = std::time::Instant::now();
+    let result = f();
+    let elapsed = start.elapsed();
+    eprintln!("[benchmark] {elapsed:?}");
+    result
 }
 
 fn dispatch_command(command: Command, config: &Config) -> anyhow::Result<()> {
@@ -408,6 +531,129 @@ fn cmd_unset(config: &Config) -> anyhow::Result<()> {
         None => eprintln!("Already no active context."),
     }
     Ok(())
+}
+
+// -- kubens command dispatch and handlers --
+
+fn dispatch_ns_command(command: NsCommand, config: &Config) -> anyhow::Result<()> {
+    match command {
+        NsCommand::List => ns_cmd_list_or_interactive(config),
+        NsCommand::Current => ns_cmd_current(config),
+        NsCommand::Switch { target, force } => ns_cmd_switch(config, &target, force),
+        NsCommand::SwapPrevious => ns_cmd_swap_previous(config),
+        NsCommand::Unset => ns_cmd_unset(config),
+        NsCommand::InteractiveFzf => ns_cmd_interactive(config, true),
+    }
+}
+
+fn ns_cmd_current(config: &Config) -> anyhow::Result<()> {
+    let view = load_merged_view(config)?;
+    let ns = current_namespace(&view).context("failed to resolve current namespace")?;
+    println!("{ns}");
+    Ok(())
+}
+
+fn ns_cmd_switch(config: &Config, target: &str, force: bool) -> anyhow::Result<()> {
+    let write_path = primary_kubeconfig(config)?;
+    let view = load_merged_view(config)?;
+
+    let ctx_name = view
+        .current_context()
+        .ok_or_else(|| anyhow::anyhow!("no current context set"))?
+        .to_owned();
+
+    if !force {
+        crate::namespace::list::namespace_exists(write_path, target)
+            .with_context(|| format!("failed to verify namespace {target:?}"))?;
+    }
+
+    let result = crate::namespace::switch::switch_namespace(write_path, target)
+        .with_context(|| format!("failed to switch to namespace {target:?}"))?;
+
+    let ns_state = NsStateFile::new(&config.cache_dir, &ctx_name);
+    if let Err(e) = ns_state.save(&result.previous) {
+        eprintln!("warning: could not save previous namespace state: {e}");
+    }
+
+    eprintln!("Switched to namespace \"{target}\".");
+    Ok(())
+}
+
+fn ns_cmd_swap_previous(config: &Config) -> anyhow::Result<()> {
+    let view = load_merged_view(config)?;
+    let ctx_name = view
+        .current_context()
+        .ok_or_else(|| anyhow::anyhow!("no current context set"))?;
+
+    let ns_state = NsStateFile::new(&config.cache_dir, ctx_name);
+    let previous = ns_state
+        .load()
+        .context("failed to read namespace state file")?
+        .ok_or_else(|| anyhow::anyhow!("no previous namespace found"))?;
+
+    ns_cmd_switch(config, &previous, false)
+}
+
+fn ns_cmd_unset(config: &Config) -> anyhow::Result<()> {
+    let write_path = primary_kubeconfig(config)?;
+    let _result = crate::namespace::switch::unset_namespace(write_path)
+        .context("failed to unset namespace")?;
+    eprintln!("Active namespace is \"default\".");
+    Ok(())
+}
+
+fn ns_cmd_list_or_interactive(config: &Config) -> anyhow::Result<()> {
+    let is_tty = std::io::IsTerminal::is_terminal(&std::io::stdout());
+    let ignore_fzf = std::env::var_os("KUBECTX_IGNORE_FZF").is_some();
+
+    if is_tty && !ignore_fzf {
+        return ns_cmd_interactive(config, false);
+    }
+
+    let write_path = primary_kubeconfig(config)?;
+    let namespaces = crate::namespace::list::list_namespaces(write_path)
+        .context("failed to list namespaces")?;
+
+    let view = load_merged_view(config)?;
+    let current_ns = current_namespace(&view).unwrap_or_default();
+
+    for ns in &namespaces {
+        if ns == &current_ns {
+            println!("* {ns}");
+        } else {
+            println!("  {ns}");
+        }
+    }
+
+    Ok(())
+}
+
+fn ns_cmd_interactive(config: &Config, use_fzf: bool) -> anyhow::Result<()> {
+    let write_path = primary_kubeconfig(config)?;
+    let namespaces = crate::namespace::list::list_namespaces(write_path)
+        .context("failed to list namespaces")?;
+
+    let view = load_merged_view(config)?;
+    let current_ns = current_namespace(&view).unwrap_or_default();
+
+    let picker_items: Vec<PickerItem> = namespaces
+        .iter()
+        .map(|ns| PickerItem {
+            name: ns.clone(),
+            is_current: ns == &current_ns,
+        })
+        .collect();
+
+    let result = if use_fzf {
+        picker::fzf::pick_fzf(&picker_items).context("fzf picker failed")?
+    } else {
+        picker::pick_inline(&picker_items).context("interactive picker failed")?
+    };
+
+    match result {
+        PickerResult::Selected(name) => ns_cmd_switch(config, &name, false),
+        PickerResult::Cancelled => Ok(()),
+    }
 }
 
 /// Return the first kubeconfig path, used for write operations.
@@ -730,5 +976,227 @@ mod tests {
     fn completion_with_extra_args_is_error() {
         let err = expect_err(&["--completion", "bash", "extra"]);
         assert!(err.contains("takes exactly one argument"), "{err}");
+    }
+
+    // ===== kubens parse_ns_args tests =====
+
+    fn parse_ns(input: &[&str]) -> anyhow::Result<NsParseResult> {
+        parse_ns_args(&args(input))
+    }
+
+    fn expect_ns_cmd(input: &[&str]) -> NsCommand {
+        match parse_ns(input).expect("should parse successfully") {
+            NsParseResult::Run(cmd) => cmd,
+            NsParseResult::Exit => panic!("expected an NsCommand, got Exit"),
+        }
+    }
+
+    fn expect_ns_exit(input: &[&str]) {
+        match parse_ns(input).expect("should parse successfully") {
+            NsParseResult::Exit => {}
+            NsParseResult::Run(cmd) => panic!("expected Exit, got {cmd:?}"),
+        }
+    }
+
+    fn expect_ns_err(input: &[&str]) -> String {
+        parse_ns(input)
+            .expect_err("should fail to parse")
+            .to_string()
+    }
+
+    // -- No args -> List --
+
+    #[test]
+    fn ns_no_args_produces_list() {
+        assert_eq!(expect_ns_cmd(&[]), NsCommand::List);
+    }
+
+    // -- Current namespace --
+
+    #[test]
+    fn ns_flag_c_produces_current() {
+        assert_eq!(expect_ns_cmd(&["-c"]), NsCommand::Current);
+    }
+
+    #[test]
+    fn ns_flag_current_produces_current() {
+        assert_eq!(expect_ns_cmd(&["--current"]), NsCommand::Current);
+    }
+
+    #[test]
+    fn ns_current_rejects_extra_args() {
+        let err = expect_ns_err(&["-c", "foo"]);
+        assert!(err.contains("does not accept additional arguments"), "{err}");
+    }
+
+    // -- Unset --
+
+    #[test]
+    fn ns_flag_u_produces_unset() {
+        assert_eq!(expect_ns_cmd(&["-u"]), NsCommand::Unset);
+    }
+
+    #[test]
+    fn ns_flag_unset_produces_unset() {
+        assert_eq!(expect_ns_cmd(&["--unset"]), NsCommand::Unset);
+    }
+
+    #[test]
+    fn ns_unset_rejects_extra_args() {
+        let err = expect_ns_err(&["-u", "foo"]);
+        assert!(err.contains("does not accept additional arguments"), "{err}");
+    }
+
+    // -- Swap previous --
+
+    #[test]
+    fn ns_dash_produces_swap_previous() {
+        assert_eq!(expect_ns_cmd(&["-"]), NsCommand::SwapPrevious);
+    }
+
+    #[test]
+    fn ns_dash_rejects_extra_args() {
+        let err = expect_ns_err(&["-", "foo"]);
+        assert!(err.contains("does not accept additional arguments"), "{err}");
+    }
+
+    // -- Switch --
+
+    #[test]
+    fn ns_bare_name_produces_switch() {
+        assert_eq!(
+            expect_ns_cmd(&["kube-system"]),
+            NsCommand::Switch {
+                target: "kube-system".to_owned(),
+                force: false,
+            }
+        );
+    }
+
+    // -- Force switch --
+
+    #[test]
+    fn ns_flag_f_with_name_produces_forced_switch() {
+        assert_eq!(
+            expect_ns_cmd(&["-f", "kube-system"]),
+            NsCommand::Switch {
+                target: "kube-system".to_owned(),
+                force: true,
+            }
+        );
+    }
+
+    #[test]
+    fn ns_flag_force_with_name_produces_forced_switch() {
+        assert_eq!(
+            expect_ns_cmd(&["--force", "kube-system"]),
+            NsCommand::Switch {
+                target: "kube-system".to_owned(),
+                force: true,
+            }
+        );
+    }
+
+    #[test]
+    fn ns_name_then_f_produces_forced_switch() {
+        assert_eq!(
+            expect_ns_cmd(&["kube-system", "-f"]),
+            NsCommand::Switch {
+                target: "kube-system".to_owned(),
+                force: true,
+            }
+        );
+    }
+
+    #[test]
+    fn ns_name_then_force_produces_forced_switch() {
+        assert_eq!(
+            expect_ns_cmd(&["kube-system", "--force"]),
+            NsCommand::Switch {
+                target: "kube-system".to_owned(),
+                force: true,
+            }
+        );
+    }
+
+    #[test]
+    fn ns_force_without_name_is_error() {
+        let err = expect_ns_err(&["-f"]);
+        assert!(err.contains("requires a namespace name"), "{err}");
+    }
+
+    #[test]
+    fn ns_force_long_without_name_is_error() {
+        let err = expect_ns_err(&["--force"]);
+        assert!(err.contains("requires a namespace name"), "{err}");
+    }
+
+    #[test]
+    fn ns_force_with_extra_args_is_error() {
+        let err = expect_ns_err(&["-f", "ns", "extra"]);
+        assert!(err.contains("takes exactly one argument"), "{err}");
+    }
+
+    // -- Fzf flag --
+
+    #[test]
+    fn ns_fzf_flag_produces_interactive_fzf() {
+        assert_eq!(expect_ns_cmd(&["--fzf"]), NsCommand::InteractiveFzf);
+    }
+
+    #[test]
+    fn ns_fzf_rejects_extra_args() {
+        let err = expect_ns_err(&["--fzf", "foo"]);
+        assert!(err.contains("does not accept additional arguments"), "{err}");
+    }
+
+    // -- Help and version --
+
+    #[test]
+    fn ns_help_short() {
+        expect_ns_exit(&["-h"]);
+    }
+
+    #[test]
+    fn ns_help_long() {
+        expect_ns_exit(&["--help"]);
+    }
+
+    #[test]
+    fn ns_version_short() {
+        expect_ns_exit(&["-V"]);
+    }
+
+    #[test]
+    fn ns_version_long() {
+        expect_ns_exit(&["--version"]);
+    }
+
+    // -- Unknown flags --
+
+    #[test]
+    fn ns_unknown_flag_is_error() {
+        let err = expect_ns_err(&["--foobar"]);
+        assert!(err.contains("unknown flag"), "{err}");
+    }
+
+    #[test]
+    fn ns_unknown_short_flag_is_error() {
+        let err = expect_ns_err(&["-x"]);
+        assert!(err.contains("unknown flag"), "{err}");
+    }
+
+    // -- Extra args after name --
+
+    #[test]
+    fn ns_name_with_unexpected_extra_is_error() {
+        let err = expect_ns_err(&["kube-system", "extra"]);
+        assert!(err.contains("unexpected extra argument"), "{err}");
+    }
+
+    #[test]
+    fn ns_name_with_multiple_extra_is_error() {
+        let err = expect_ns_err(&["kube-system", "-f", "extra"]);
+        assert!(err.contains("unexpected extra arguments"), "{err}");
     }
 }
