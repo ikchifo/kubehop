@@ -18,14 +18,14 @@ dependencies at runtime.
 
 - **Built-in fuzzy picker** powered by nucleo (from the Helix
   editor) and ratatui -- no fzf required
-- **Single kubeconfig parse** per operation, held in memory for
-  the entire flow
-- **Selective deserialization** -- only `current-context` and
-  context names are parsed; clusters, users, and certificates
-  are never allocated
-- **Multi-file `KUBECONFIG`** support with first-occurrence-wins
-  dedup
-- **Sub-50ms** time-to-interactive on typical kubeconfigs
+- **Single kubeconfig parse** per operation, held in memory
+  for the entire flow
+- **Selective parsing** -- reads only `current-context` and
+  context names; skips clusters, users, and certificates
+  entirely
+- **Multi-file `KUBECONFIG`** support -- when names overlap,
+  the first file wins
+- **Sub-50ms startup** on standard kubeconfig files
 - **k9s plugin** support via a `pick` subcommand
 - **Shell completions** for bash, zsh, and fish
 - Optional **fzf fallback** via `--fzf` flag
@@ -38,7 +38,7 @@ dependencies at runtime.
 cargo install --git https://github.com/ikchifo/kubehop
 ```
 
-The binary is called `khop`. You can use it directly:
+This installs a binary called `khop`:
 
 ```sh
 khop              # context switching mode (default)
@@ -47,7 +47,7 @@ khop -c           # show current context
 
 ### Optional: kubectx/kubens symlinks
 
-If you want the familiar `kubectx`/`kubens` command names, or
+To use the `kubectx`/`kubens` command names, or for
 compatibility with tools that expect them, create symlinks:
 
 ```sh
@@ -55,7 +55,7 @@ ln -s ~/.cargo/bin/khop ~/.cargo/bin/kubectx
 ln -s ~/.cargo/bin/khop ~/.cargo/bin/kubens
 ```
 
-Behavior is determined by argv0:
+The tool detects its mode from the command name you use:
 
 | Invoked as | Mode |
 |---|---|
@@ -80,8 +80,7 @@ khop --completion <shell> Output shell completion (bash/zsh/fish)
 
 ### Namespace switching
 
-When invoked as `kubens` (via symlink) or with the namespace
-mode binary name:
+When invoked as `kubens` or `kubectl-ns` (via symlink):
 
 ```
 kubens                    List namespaces (interactive if TTY)
@@ -106,12 +105,11 @@ khop --completion zsh > ~/.zfunc/_khop
 khop --completion fish > ~/.config/fish/completions/khop.fish
 ```
 
-Pre-generated scripts are also available in the `completion/`
-directory.
+The `completion/` directory has pre-generated scripts.
 
 ## k9s plugin
 
-kubehop can be used as a
+kubehop works as a
 [k9s plugin](https://k9scli.io/topics/plugins/) for context
 switching. Add this to your k9s `plugins.yaml`:
 
@@ -132,8 +130,8 @@ plugins:
 
 ```
 src/
-  main.rs           Thin entry point (~10 lines)
-  lib.rs            Crate root, module wiring
+  main.rs           Entry point (~10 lines)
+  lib.rs            Crate root, module declarations
   cli.rs            Arg parsing and command dispatch
   dispatch.rs       Argv0-based mode detection
   completion.rs     Shell completion generation
@@ -144,18 +142,17 @@ src/
   integration/      k9s plugin subcommand
 ```
 
-Key design decisions:
+Design decisions:
 
 - **Selective serde** for reads, full `serde_yaml::Value`
-  round-trip for writes (preserves all fields through
-  mutations)
+  round-trip for writes (so edits never drop unknown fields)
 - **No async runtime** -- all operations are local file I/O
   on small files
 - **`thiserror`** in library modules, **`anyhow`** in the
   CLI layer
-- **State file compatibility** -- previous-context state is
-  stored at the same path kubectx uses, so `khop -` works
-  if you are migrating
+- **State file compatibility** -- stores previous-context
+  state at the same path as kubectx, so `khop -` works for
+  users migrating from kubectx
 
 ## License
 
