@@ -9,20 +9,23 @@ repository = "https://github.com/ikchifo/kubehop"
 keywords = ["kubernetes", "kubectl", "context", "kubectx"]
 categories = ["command-line-utilities"]
 readme = "README.md"
-rust-version = "1.85"
+rust-version = "1.86"
 exclude = [".github/", "docs/", "tests/", "deploy/", "examples/"]
 
 [dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
-crossterm = "0.28"
+crossterm = "0.29"
 directories = "6"
 mimalloc = "0.1"
 nucleo-matcher = "0.3"
-ratatui = "0.29"
+ratatui = "0.30"
 serde = { version = "1", features = ["derive"] }
 serde_yaml = "0.9"
 thiserror = "2"
+
+[patch.crates-io]
+ratatui = { git = "https://github.com/ratatui/ratatui.git", rev = "848f46474220d3af47d928ec0b1d3b6906f54239" }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

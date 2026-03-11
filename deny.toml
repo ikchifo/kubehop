@@ -3,8 +3,9 @@ targets = []
 all-features = true
 
 [advisories]
-# paste is archived (transitive dep via ratatui); no action needed
-ignore = ["RUSTSEC-2024-0436"]
+# time 0.3.47 fix requires Rust 1.88; transitive dep via ratatui,
+# khop never parses RFC 2822 dates from user input
+ignore = ["RUSTSEC-2026-0009"]
 
 [licenses]
 allow = [

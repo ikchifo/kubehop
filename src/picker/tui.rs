@@ -23,9 +23,6 @@ use super::{PickerItem, PickerResult};
 /// Maximum visible lines for the inline viewport (prompt + list rows).
 const PICKER_HEIGHT: u16 = 15;
 
-/// Number of items to jump when paging up/down.
-const PAGE_STEP: usize = (PICKER_HEIGHT - 2) as usize;
-
 const PROMPT: &str = "> ";
 
 /// Launch an inline fuzzy picker on stderr and return the user's selection.
@@ -81,6 +78,8 @@ struct PickerState {
     scored: Vec<ScoredItem>,
     list_state: ListState,
     matcher: Matcher,
+    /// Visible list rows from the last render, used for page step calculation.
+    visible_rows: usize,
 }
 
 impl PickerState {
@@ -96,6 +95,7 @@ impl PickerState {
             scored,
             list_state,
             matcher,
+            visible_rows: usize::from(PICKER_HEIGHT.saturating_sub(2)),
         }
     }
 
@@ -163,60 +163,63 @@ fn run_picker_loop(
     let mut state = PickerState::new(items);
 
     loop {
-        terminal.draw(|frame| render(frame, items, &mut state))?;
+        terminal.draw(|f| render(f, items, &mut state))?;
 
-        // Non-key events (resize, mouse, focus, paste) are ignored; the next
-        // `terminal.draw()` at the top of the loop redraws with new dimensions.
-        if let Event::Key(key) = event::read()? {
-            if key.kind != KeyEventKind::Press {
-                continue;
+        match event::read()? {
+            Event::Resize(..) => {
+                // Eagerly update internal buffers so the next draw() renders
+                // at the correct dimensions. Ratatui (patched with PR #2355)
+                // handles horizontal-shrink artifacts internally.
+                terminal.autoresize()?;
             }
+            Event::Key(key) if key.kind == KeyEventKind::Press => {
+                let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
 
-            let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
-
-            match key.code {
-                KeyCode::Esc => return Ok(PickerResult::Cancelled),
-                KeyCode::Char('c') if ctrl => return Ok(PickerResult::Cancelled),
-                KeyCode::Char('l') if ctrl => {
-                    terminal.clear()?;
+                match key.code {
+                    KeyCode::Esc => return Ok(PickerResult::Cancelled),
+                    KeyCode::Char('c') if ctrl => return Ok(PickerResult::Cancelled),
+                    KeyCode::Char('l') if ctrl => {
+                        terminal.clear()?;
+                    }
+                    KeyCode::Char('z') if ctrl => {
+                        suspend(terminal)?;
+                    }
+                    KeyCode::Enter => {
+                        return Ok(match state.selected_name(items) {
+                            Some(name) => PickerResult::Selected(name.to_owned()),
+                            None => PickerResult::Cancelled,
+                        });
+                    }
+                    KeyCode::Up => state.move_up(),
+                    KeyCode::Char('p') if ctrl => state.move_up(),
+                    KeyCode::Down => state.move_down(),
+                    KeyCode::Char('n') if ctrl => state.move_down(),
+                    KeyCode::PageUp => state.page_up(state.visible_rows),
+                    KeyCode::PageDown => state.page_down(state.visible_rows),
+                    KeyCode::Home => state.move_first(),
+                    KeyCode::End => state.move_last(),
+                    KeyCode::Char('u') if ctrl => {
+                        state.query.clear();
+                        state.update_scores(items);
+                    }
+                    KeyCode::Char('w') if ctrl => {
+                        let trimmed = state.query.trim_end();
+                        let boundary = trimmed.rfind(' ').map_or(0, |pos| pos + 1);
+                        state.query.truncate(boundary);
+                        state.update_scores(items);
+                    }
+                    KeyCode::Backspace => {
+                        state.query.pop();
+                        state.update_scores(items);
+                    }
+                    KeyCode::Char(c) => {
+                        state.query.push(c);
+                        state.update_scores(items);
+                    }
+                    _ => {}
                 }
-                KeyCode::Char('z') if ctrl => {
-                    suspend(terminal)?;
-                }
-                KeyCode::Enter => {
-                    return Ok(match state.selected_name(items) {
-                        Some(name) => PickerResult::Selected(name.to_owned()),
-                        None => PickerResult::Cancelled,
-                    });
-                }
-                KeyCode::Up => state.move_up(),
-                KeyCode::Char('p') if ctrl => state.move_up(),
-                KeyCode::Down => state.move_down(),
-                KeyCode::Char('n') if ctrl => state.move_down(),
-                KeyCode::PageUp => state.page_up(PAGE_STEP),
-                KeyCode::PageDown => state.page_down(PAGE_STEP),
-                KeyCode::Home => state.move_first(),
-                KeyCode::End => state.move_last(),
-                KeyCode::Char('u') if ctrl => {
-                    state.query.clear();
-                    state.update_scores(items);
-                }
-                KeyCode::Char('w') if ctrl => {
-                    let trimmed = state.query.trim_end();
-                    let boundary = trimmed.rfind(' ').map_or(0, |pos| pos + 1);
-                    state.query.truncate(boundary);
-                    state.update_scores(items);
-                }
-                KeyCode::Backspace => {
-                    state.query.pop();
-                    state.update_scores(items);
-                }
-                KeyCode::Char(c) => {
-                    state.query.push(c);
-                    state.update_scores(items);
-                }
-                _ => {}
             }
+            _ => {}
         }
     }
 }
@@ -292,6 +295,7 @@ fn render(frame: &mut ratatui::Frame, items: &[PickerItem], state: &mut PickerSt
         )
         .highlight_symbol("\u{25b8} ");
 
+    state.visible_rows = usize::from(list_area.height);
     frame.render_stateful_widget(list, list_area, &mut state.list_state);
 
     let status_text = format!("  [{match_count}/{total}]");
