@@ -1,6 +1,6 @@
 //! Context listing with natural sort order.
 
-use crate::kubeconfig::KubeConfigView;
+use crate::kubeconfig::{ContextFields, KubeConfigView};
 
 /// A single entry in the context list.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -9,12 +9,8 @@ pub struct ContextListItem {
     pub name: String,
     /// Whether this context is the active (`current-context`) one.
     pub is_current: bool,
-    /// The default namespace, if set.
-    pub namespace: Option<String>,
-    /// The target cluster, if set.
-    pub cluster: Option<String>,
-    /// The user credential, if set.
-    pub user: Option<String>,
+    /// Context metadata (namespace, cluster, user) when present.
+    pub context: Option<ContextFields>,
 }
 
 /// Build a sorted context list from a kubeconfig view.
@@ -37,15 +33,10 @@ pub fn list_contexts(view: &KubeConfigView) -> Result<Vec<ContextListItem>, supe
     let mut items: Vec<ContextListItem> = view
         .contexts
         .iter()
-        .map(|entry| {
-            let fields = entry.context.as_ref();
-            ContextListItem {
-                is_current: current == Some(entry.name.as_str()),
-                name: entry.name.clone(),
-                namespace: fields.and_then(|f| f.namespace.clone()),
-                cluster: fields.and_then(|f| f.cluster.clone()),
-                user: fields.and_then(|f| f.user.clone()),
-            }
+        .map(|entry| ContextListItem {
+            is_current: current == Some(entry.name.as_str()),
+            name: entry.name.clone(),
+            context: entry.context.clone(),
         })
         .collect();
 

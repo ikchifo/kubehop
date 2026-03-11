@@ -4,9 +4,11 @@ use serde::Deserialize;
 
 /// Lightweight read-only view of a kubeconfig file.
 ///
-/// Only deserializes the fields needed for context listing and switching.
-/// Clusters, users, auth providers, and embedded certificates are skipped
-/// by serde automatically and never allocated.
+/// Only deserializes the fields needed for context listing, switching, and
+/// preview. Top-level `clusters` and `users` arrays (with embedded
+/// certificates, auth providers, etc.) are skipped by serde and never
+/// allocated. The `cluster` and `user` *names* within each context entry
+/// are deserialized for the picker preview line.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct KubeConfigView {
     /// The active context name, if set.

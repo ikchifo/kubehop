@@ -93,11 +93,7 @@ fn to_picker_items(view: &KubeConfigView) -> Vec<PickerItem> {
     list_contexts(view)
         .unwrap()
         .into_iter()
-        .map(|c| PickerItem {
-            name: c.name,
-            is_current: c.is_current,
-            meta: None,
-        })
+        .map(PickerItem::from)
         .collect()
 }
 

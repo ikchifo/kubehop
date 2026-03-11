@@ -35,14 +35,7 @@ fn one_load_invariant_single_parse_serves_list_and_score() {
     );
 
     // Convert to picker items -- only uses data already in memory.
-    let items: Vec<PickerItem> = list
-        .iter()
-        .map(|c| PickerItem {
-            name: c.name.clone(),
-            is_current: c.is_current,
-            meta: None,
-        })
-        .collect();
+    let items: Vec<PickerItem> = list.into_iter().map(PickerItem::from).collect();
 
     // Score against a query -- operates on PickerItems, not the kubeconfig.
     let scored = score_items(&items, "dev");
@@ -72,14 +65,7 @@ fn one_load_invariant_merged_files() {
         list.len()
     );
 
-    let items: Vec<PickerItem> = list
-        .iter()
-        .map(|c| PickerItem {
-            name: c.name.clone(),
-            is_current: c.is_current,
-            meta: None,
-        })
-        .collect();
+    let items: Vec<PickerItem> = list.into_iter().map(PickerItem::from).collect();
 
     let scored = score_items(&items, "ctx");
     assert!(

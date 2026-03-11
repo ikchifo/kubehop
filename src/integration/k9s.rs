@@ -71,17 +71,13 @@ pub fn execute_pick(args: &PickArgs, config: &Config) -> anyhow::Result<()> {
     let ctx_items = list::list_contexts(&view).context("failed to list contexts")?;
 
     let picker_items: Vec<PickerItem> = ctx_items
-        .iter()
+        .into_iter()
         .map(|item| {
-            let is_current = match &args.current {
-                Some(name) => item.name == *name,
-                None => item.is_current,
-            };
-            PickerItem {
-                name: item.name.clone(),
-                is_current,
-                meta: None,
+            let mut pi = PickerItem::from(item);
+            if let Some(name) = &args.current {
+                pi.is_current = pi.name == *name;
             }
+            pi
         })
         .collect();
 

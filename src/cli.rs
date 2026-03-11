@@ -82,11 +82,11 @@ impl Command {
     }
 }
 
-/// Sentinel returned by `parse_args` when the user requested `--help`
+/// Sentinel returned by argument parsers when the user requested `--help`
 /// or `--version` and the output was already printed.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum ParseResult {
-    Run(Command),
+pub(crate) enum ParseResult<T> {
+    Run(T),
     Exit,
 }
 
@@ -104,19 +104,11 @@ pub(crate) enum NsCommand {
     Completion { shell: crate::completion::Shell },
 }
 
-/// Sentinel returned by `parse_ns_args` when the user requested `--help`
-/// or `--version` and the output was already printed.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum NsParseResult {
-    Run(NsCommand),
-    Exit,
-}
-
 /// Parse CLI arguments (everything after argv0) into a [`Command`].
 ///
 /// Prints help or version to stdout when requested and returns
 /// [`ParseResult::Exit`] so the caller can exit cleanly.
-pub(crate) fn parse_args(args: &[String]) -> anyhow::Result<ParseResult> {
+pub(crate) fn parse_args(args: &[String]) -> anyhow::Result<ParseResult<Command>> {
     if args.is_empty() {
         return Ok(ParseResult::Run(Command::List));
     }
@@ -166,15 +158,7 @@ pub(crate) fn parse_args(args: &[String]) -> anyhow::Result<ParseResult> {
             Ok(ParseResult::Run(Command::SwapPrevious))
         }
         "--completion" => {
-            let shell_name = args.get(1).map(String::as_str).ok_or_else(|| {
-                anyhow::anyhow!("--completion requires a shell name (bash, zsh, fish)")
-            })?;
-            if args.len() > 2 {
-                bail!("--completion takes exactly one argument");
-            }
-            let shell = shell_name
-                .parse::<crate::completion::Shell>()
-                .map_err(|e| anyhow::anyhow!("{e}"))?;
+            let shell = parse_completion_shell(args)?;
             Ok(ParseResult::Run(Command::Completion { shell }))
         }
         "pick" => {
@@ -182,8 +166,8 @@ pub(crate) fn parse_args(args: &[String]) -> anyhow::Result<ParseResult> {
             Ok(ParseResult::Run(Command::Pick(pick_args)))
         }
         "ns" => match parse_ns_args(&args[1..])? {
-            NsParseResult::Run(ns_cmd) => Ok(ParseResult::Run(Command::Ns(ns_cmd))),
-            NsParseResult::Exit => Ok(ParseResult::Exit),
+            ParseResult::Run(ns_cmd) => Ok(ParseResult::Run(Command::Ns(ns_cmd))),
+            ParseResult::Exit => Ok(ParseResult::Exit),
         },
         arg if arg.starts_with('-') => {
             bail!("unknown flag: {arg}\nRun with --help for usage information")
@@ -214,6 +198,20 @@ pub(crate) fn parse_args(args: &[String]) -> anyhow::Result<ParseResult> {
     }
 }
 
+/// Parse `--completion <shell>` from args[0..], returning the shell variant.
+fn parse_completion_shell(args: &[String]) -> anyhow::Result<crate::completion::Shell> {
+    let shell_name = args
+        .get(1)
+        .map(String::as_str)
+        .ok_or_else(|| anyhow::anyhow!("--completion requires a shell name (bash, zsh, fish)"))?;
+    if args.len() > 2 {
+        bail!("--completion takes exactly one argument");
+    }
+    shell_name
+        .parse::<crate::completion::Shell>()
+        .map_err(|e| anyhow::anyhow!("{e}"))
+}
+
 /// Reject extra arguments after a flag that takes none.
 fn ensure_no_extra(args: &[String], flag: &str) -> anyhow::Result<()> {
     if args.len() > 1 {
@@ -225,10 +223,10 @@ fn ensure_no_extra(args: &[String], flag: &str) -> anyhow::Result<()> {
 /// Parse kubens CLI arguments into a [`NsCommand`].
 ///
 /// Prints help or version to stdout when requested and returns
-/// [`NsParseResult::Exit`] so the caller can exit cleanly.
-pub(crate) fn parse_ns_args(args: &[String]) -> anyhow::Result<NsParseResult> {
+/// [`ParseResult::Exit`] so the caller can exit cleanly.
+pub(crate) fn parse_ns_args(args: &[String]) -> anyhow::Result<ParseResult<NsCommand>> {
     if args.is_empty() {
-        return Ok(NsParseResult::Run(NsCommand::List));
+        return Ok(ParseResult::Run(NsCommand::List));
     }
 
     let first = args[0].as_str();
@@ -236,43 +234,35 @@ pub(crate) fn parse_ns_args(args: &[String]) -> anyhow::Result<NsParseResult> {
     match first {
         "-h" | "--help" => {
             println!("{KUBENS_HELP_TEXT}");
-            Ok(NsParseResult::Exit)
+            Ok(ParseResult::Exit)
         }
         "-V" | "--version" => {
             println!("kubens {VERSION}");
-            Ok(NsParseResult::Exit)
+            Ok(ParseResult::Exit)
         }
         "-c" | "--current" => {
             ensure_no_extra(args, first)?;
-            Ok(NsParseResult::Run(NsCommand::Current))
+            Ok(ParseResult::Run(NsCommand::Current))
         }
         "-u" | "--unset" => {
             ensure_no_extra(args, first)?;
-            Ok(NsParseResult::Run(NsCommand::Unset))
+            Ok(ParseResult::Run(NsCommand::Unset))
         }
         "--raw" => {
             ensure_no_extra(args, "--raw")?;
-            Ok(NsParseResult::Run(NsCommand::ListRaw))
+            Ok(ParseResult::Run(NsCommand::ListRaw))
         }
         "--fzf" => {
             ensure_no_extra(args, "--fzf")?;
-            Ok(NsParseResult::Run(NsCommand::InteractiveFzf))
+            Ok(ParseResult::Run(NsCommand::InteractiveFzf))
         }
         "-" => {
             ensure_no_extra(args, "-")?;
-            Ok(NsParseResult::Run(NsCommand::SwapPrevious))
+            Ok(ParseResult::Run(NsCommand::SwapPrevious))
         }
         "--completion" => {
-            let shell_name = args.get(1).map(String::as_str).ok_or_else(|| {
-                anyhow::anyhow!("--completion requires a shell name (bash, zsh, fish)")
-            })?;
-            if args.len() > 2 {
-                bail!("--completion takes exactly one argument");
-            }
-            let shell = shell_name
-                .parse::<crate::completion::Shell>()
-                .map_err(|e| anyhow::anyhow!("{e}"))?;
-            Ok(NsParseResult::Run(NsCommand::Completion { shell }))
+            let shell = parse_completion_shell(args)?;
+            Ok(ParseResult::Run(NsCommand::Completion { shell }))
         }
         "-f" | "--force" => {
             let target = args
@@ -283,7 +273,7 @@ pub(crate) fn parse_ns_args(args: &[String]) -> anyhow::Result<NsParseResult> {
             if args.len() > 2 {
                 bail!("{first} takes exactly one argument");
             }
-            Ok(NsParseResult::Run(NsCommand::Switch {
+            Ok(ParseResult::Run(NsCommand::Switch {
                 target: target.to_owned(),
                 force: true,
             }))
@@ -303,7 +293,7 @@ pub(crate) fn parse_ns_args(args: &[String]) -> anyhow::Result<NsParseResult> {
             if args.len() > 2 {
                 bail!("unexpected extra arguments after {positional:?}");
             }
-            Ok(NsParseResult::Run(NsCommand::Switch {
+            Ok(ParseResult::Run(NsCommand::Switch {
                 target: positional.to_owned(),
                 force,
             }))
@@ -384,8 +374,8 @@ pub fn execute(mode: ToolMode, config: &Config) -> anyhow::Result<()> {
         ToolMode::Kubens => {
             let result = parse_ns_args(&filtered_args)?;
             let command = match result {
-                NsParseResult::Run(cmd) => cmd,
-                NsParseResult::Exit => return Ok(()),
+                ParseResult::Run(cmd) => cmd,
+                ParseResult::Exit => return Ok(()),
             };
             if benchmark {
                 run_benchmarked(|| dispatch_ns_command(command, config))
@@ -776,7 +766,7 @@ mod tests {
         input.iter().map(|s| (*s).to_string()).collect()
     }
 
-    fn parse(input: &[&str]) -> anyhow::Result<ParseResult> {
+    fn parse(input: &[&str]) -> anyhow::Result<ParseResult<Command>> {
         parse_args(&args(input))
     }
 
@@ -1146,21 +1136,21 @@ mod tests {
 
     // ===== kubens parse_ns_args tests =====
 
-    fn parse_ns(input: &[&str]) -> anyhow::Result<NsParseResult> {
+    fn parse_ns(input: &[&str]) -> anyhow::Result<ParseResult<NsCommand>> {
         parse_ns_args(&args(input))
     }
 
     fn expect_ns_cmd(input: &[&str]) -> NsCommand {
         match parse_ns(input).expect("should parse successfully") {
-            NsParseResult::Run(cmd) => cmd,
-            NsParseResult::Exit => panic!("expected an NsCommand, got Exit"),
+            ParseResult::Run(cmd) => cmd,
+            ParseResult::Exit => panic!("expected an NsCommand, got Exit"),
         }
     }
 
     fn expect_ns_exit(input: &[&str]) {
         match parse_ns(input).expect("should parse successfully") {
-            NsParseResult::Exit => {}
-            NsParseResult::Run(cmd) => panic!("expected Exit, got {cmd:?}"),
+            ParseResult::Exit => {}
+            ParseResult::Run(cmd) => panic!("expected Exit, got {cmd:?}"),
         }
     }
 
