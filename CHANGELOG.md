@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0](https://github.com/ikchifo/kubehop/compare/v0.2.1...v0.3.0) - 2026-03-11
+
+### Added
+
+- sort picker items by recency (most recently used first)
+- add khop ns subcommand and kubens shell completions ([#3](https://github.com/ikchifo/kubehop/pull/3))
+
+### Fixed
+
+- picker cleanup + feat: rich preview line ([#5](https://github.com/ikchifo/kubehop/pull/5))
+
+### Other
+
+- consolidate PickerMeta into ContextFields and deduplicate CLI helpers
+
 ## [0.2.1](https://github.com/ikchifo/kubehop/compare/v0.2.0...v0.2.1) - 2026-03-11
 
 ### Added
