@@ -26,7 +26,6 @@ dependencies. Written in Rust.
 - **Sub-50ms startup** on standard kubeconfig files
 - **Batch operations** -- delete multiple contexts in one
   command
-- **k9s plugin** support via a `pick` subcommand
 - **Shell completions** for bash, zsh, and fish with
   dynamic context/namespace name completion
 - **`--raw` output** for scripting (no prefixes, no color)
@@ -136,25 +135,6 @@ kubens --completion zsh  > ~/.zfunc/_kubens
 kubens --completion fish > ~/.config/fish/completions/kubens.fish
 ```
 
-## k9s plugin
-
-kubehop works as a
-[k9s plugin](https://k9scli.io/topics/plugins/) for context
-switching. Add this to your k9s `plugins.yaml`:
-
-```yaml
-plugins:
-  kubehop:
-    shortCut: Ctrl-K
-    description: Switch context
-    scopes:
-      - all
-    command: khop
-    args:
-      - pick
-      - --switch
-```
-
 ## Architecture
 
 ```
@@ -168,7 +148,7 @@ src/
   context/          Current, switch, mutate (rename/delete), state
   namespace/        List, switch, unset, per-context state
   picker/           Fuzzy scoring (nucleo) + inline TUI (ratatui)
-  integration/      k9s plugin subcommand
+  integration/      External tool integration (pick subcommand)
 ```
 
 Design decisions:

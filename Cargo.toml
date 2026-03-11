@@ -10,7 +10,7 @@ keywords = ["kubernetes", "kubectl", "context", "kubectx"]
 categories = ["command-line-utilities"]
 readme = "README.md"
 rust-version = "1.86"
-exclude = [".github/", "docs/", "tests/", "deploy/", "examples/"]
+exclude = [".github/", "docs/", "tests/", "deploy/"]
 
 [dependencies]
 anyhow = "1"
