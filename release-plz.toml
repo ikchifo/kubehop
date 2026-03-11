@@ -1,0 +1,15 @@
+[workspace]
+# cargo-dist creates the GitHub Release when it processes the tag,
+# so release-plz only needs to create the git tag itself.
+git_release_enable = false
+git_tag_enable = true
+git_tag_name = "v{{ version }}"
+
+# Publish to crates.io on release.
+publish = true
+
+# Update CHANGELOG.md in the release PR.
+changelog_update = true
+
+# Catch accidental semver violations.
+semver_check = true
