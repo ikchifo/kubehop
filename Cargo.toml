@@ -24,6 +24,9 @@ serde = { version = "1", features = ["derive"] }
 serde_yaml = "0.9"
 thiserror = "2"
 
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 [profile.release]
 opt-level = 3
 lto = "fat"

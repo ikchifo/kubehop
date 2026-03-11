@@ -578,6 +578,7 @@ dependencies = [
  "criterion",
  "crossterm",
  "directories",
+ "libc",
  "mimalloc",
  "nucleo-matcher",
  "ratatui",

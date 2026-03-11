@@ -6,7 +6,7 @@
 use std::io::{Stderr, stderr};
 
 use crossterm::cursor::SetCursorStyle;
-use crossterm::event::{self, Event, KeyCode, KeyEventKind};
+use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Layout};
@@ -141,8 +141,15 @@ fn run_picker_loop(
             if key.kind != KeyEventKind::Press {
                 continue;
             }
+
+            let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+
             match key.code {
                 KeyCode::Esc => return Ok(PickerResult::Cancelled),
+                KeyCode::Char('c') if ctrl => return Ok(PickerResult::Cancelled),
+                KeyCode::Char('z') if ctrl => {
+                    suspend(terminal)?;
+                }
                 KeyCode::Enter => {
                     return Ok(match state.selected_name(items) {
                         Some(name) => PickerResult::Selected(name.to_owned()),
@@ -163,6 +170,32 @@ fn run_picker_loop(
             }
         }
     }
+}
+
+/// Suspend the process (Ctrl+Z) by restoring the terminal and sending SIGTSTP.
+///
+/// On resume, raw mode and cursor style are re-established so the picker
+/// can continue where it left off.
+fn suspend(terminal: &mut Terminal<CrosstermBackend<Stderr>>) -> anyhow::Result<()> {
+    let _ = crossterm::execute!(stderr(), SetCursorStyle::DefaultUserShape);
+    disable_raw_mode()?;
+    let _ = terminal.clear();
+
+    #[cfg(unix)]
+    {
+        // SAFETY: `kill(0, SIGTSTP)` sends the signal to our own process
+        // group. This is the standard mechanism for voluntary suspension
+        // (equivalent to what the shell does on Ctrl+Z). No memory or
+        // resource invariants are violated.
+        unsafe {
+            libc::kill(0, libc::SIGTSTP);
+        }
+    }
+
+    // Re-enter raw mode after the shell foregrounds us.
+    enable_raw_mode()?;
+    crossterm::execute!(stderr(), SetCursorStyle::BlinkingBlock)?;
+    Ok(())
 }
 
 fn render(frame: &mut ratatui::Frame, items: &[PickerItem], state: &mut PickerState) {
