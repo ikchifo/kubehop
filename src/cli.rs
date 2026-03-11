@@ -486,7 +486,12 @@ fn cmd_interactive(config: &Config, use_fzf: bool) -> anyhow::Result<()> {
     let view = load_merged_view(config)?;
     let ctx_items = list::list_contexts(&view).context("failed to list contexts")?;
 
-    let picker_items: Vec<PickerItem> = ctx_items.into_iter().map(PickerItem::from).collect();
+    let mut picker_items: Vec<PickerItem> = ctx_items.into_iter().map(PickerItem::from).collect();
+    picker::recency::load_and_sort(
+        &mut picker_items,
+        &config.cache_dir,
+        picker::recency::Domain::Context,
+    );
 
     let result = if use_fzf {
         picker::fzf::pick_fzf(&picker_items).context("fzf picker failed")?
@@ -518,6 +523,14 @@ fn cmd_switch(config: &Config, target: &str) -> anyhow::Result<()> {
         if let Err(e) = state.save(prev) {
             eprintln!("warning: could not save previous context state: {e}");
         }
+    }
+
+    if let Err(e) = picker::recency::RecencyState::record_and_save(
+        &config.cache_dir,
+        picker::recency::Domain::Context,
+        target,
+    ) {
+        eprintln!("warning: could not save recency state: {e}");
     }
 
     eprintln!("Switched to context \"{}\".", result.current);
@@ -635,6 +648,14 @@ fn ns_cmd_switch(config: &Config, target: &str, force: bool) -> anyhow::Result<(
         eprintln!("warning: could not save previous namespace state: {e}");
     }
 
+    if let Err(e) = picker::recency::RecencyState::record_and_save(
+        &config.cache_dir,
+        picker::recency::Domain::Namespace,
+        target,
+    ) {
+        eprintln!("warning: could not save recency state: {e}");
+    }
+
     eprintln!("Switched to namespace \"{target}\".");
     Ok(())
 }
@@ -707,7 +728,7 @@ fn ns_cmd_interactive(config: &Config, use_fzf: bool) -> anyhow::Result<()> {
     let namespaces =
         crate::namespace::list::list_namespaces(write_path).context("failed to list namespaces")?;
 
-    let picker_items: Vec<PickerItem> = namespaces
+    let mut picker_items: Vec<PickerItem> = namespaces
         .iter()
         .map(|ns| PickerItem {
             name: ns.clone(),
@@ -715,6 +736,11 @@ fn ns_cmd_interactive(config: &Config, use_fzf: bool) -> anyhow::Result<()> {
             meta: None,
         })
         .collect();
+    picker::recency::load_and_sort(
+        &mut picker_items,
+        &config.cache_dir,
+        picker::recency::Domain::Namespace,
+    );
 
     let result = if use_fzf {
         picker::fzf::pick_fzf(&picker_items).context("fzf picker failed")?

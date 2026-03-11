@@ -1,6 +1,7 @@
 //! Interactive fuzzy picker for context selection.
 
 pub mod fzf;
+pub mod recency;
 mod score;
 mod tui;
 

@@ -30,6 +30,8 @@ dependencies. Written in Rust.
 - **Shell completions** for bash, zsh, and fish with
   dynamic context/namespace name completion
 - **`--raw` output** for scripting (no prefixes, no color)
+- **Recency-aware picker** -- recently switched contexts and
+  namespaces appear first
 - Optional **[fzf](https://github.com/junegunn/fzf)
   fallback** via `--fzf` flag
 
