@@ -1,6 +1,6 @@
 [package]
 name = "khop"
-version = "0.2.1"
+version = "0.2.2"
 edition = "2024"
 description = "Fast Kubernetes context and namespace switcher"
 license = "Apache-2.0"
