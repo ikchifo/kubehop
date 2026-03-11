@@ -62,4 +62,9 @@ multiple_crate_versions = "allow"
 undocumented_unsafe_blocks = "warn"
 
 [dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
 tempfile = "3.26.0"
+
+[[bench]]
+name = "startup"
+harness = false

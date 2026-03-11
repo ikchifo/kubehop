@@ -47,6 +47,15 @@ jobs:
           components: rustfmt
       - run: cargo fmt --check
 
+  bench:
+    name: Bench compile
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo bench --no-run
+
   security:
     name: Security audit
     runs-on: ubuntu-latest
