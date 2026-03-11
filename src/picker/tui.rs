@@ -5,9 +5,9 @@
 
 use std::io::{Stderr, stderr};
 
-use crossterm::cursor::SetCursorStyle;
+use crossterm::cursor::{MoveTo, SetCursorStyle};
 use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
-use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
+use crossterm::terminal::{Clear, ClearType as CtClearType, disable_raw_mode, enable_raw_mode};
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Layout};
 use ratatui::style::{Color, Modifier, Style};
@@ -18,10 +18,10 @@ use ratatui::{Terminal, TerminalOptions, Viewport};
 use nucleo_matcher::{Config, Matcher};
 
 use super::score::{ScoredItem, score_items_with_matcher};
-use super::{PickerItem, PickerResult};
+use super::{PickerItem, PickerMeta, PickerResult};
 
-/// Maximum visible lines for the inline viewport (prompt + list rows).
-const PICKER_HEIGHT: u16 = 15;
+/// Maximum visible lines for the inline viewport (list + preview + status + input).
+const PICKER_HEIGHT: u16 = 16;
 
 const PROMPT: &str = "> ";
 
@@ -66,9 +66,18 @@ impl TerminalGuard {
 
 impl Drop for TerminalGuard {
     fn drop(&mut self) {
-        let _ = crossterm::execute!(stderr(), SetCursorStyle::DefaultUserShape);
+        // Move cursor to the viewport origin and clear downward. We avoid
+        // `terminal.clear()` because it restores the cursor to its pre-clear
+        // position (the bottom input line), leaving a blank gap above the
+        // shell prompt.
+        let y = self.terminal.get_frame().area().y;
+        let _ = crossterm::execute!(
+            stderr(),
+            MoveTo(0, y),
+            Clear(CtClearType::FromCursorDown),
+            SetCursorStyle::DefaultUserShape,
+        );
         let _ = disable_raw_mode();
-        let _ = self.terminal.clear();
     }
 }
 
@@ -95,7 +104,7 @@ impl PickerState {
             scored,
             list_state,
             matcher,
-            visible_rows: usize::from(PICKER_HEIGHT.saturating_sub(2)),
+            visible_rows: usize::from(PICKER_HEIGHT.saturating_sub(3)),
         }
     }
 
@@ -229,9 +238,14 @@ fn run_picker_loop(
 /// On resume, raw mode and cursor style are re-established so the picker
 /// can continue where it left off.
 fn suspend(terminal: &mut Terminal<CrosstermBackend<Stderr>>) -> anyhow::Result<()> {
-    let _ = crossterm::execute!(stderr(), SetCursorStyle::DefaultUserShape);
+    let y = terminal.get_frame().area().y;
+    crossterm::execute!(
+        stderr(),
+        MoveTo(0, y),
+        Clear(CtClearType::FromCursorDown),
+        SetCursorStyle::DefaultUserShape,
+    )?;
     disable_raw_mode()?;
-    let _ = terminal.clear();
 
     #[cfg(unix)]
     {
@@ -253,8 +267,9 @@ fn suspend(terminal: &mut Terminal<CrosstermBackend<Stderr>>) -> anyhow::Result<
 fn render(frame: &mut ratatui::Frame, items: &[PickerItem], state: &mut PickerState) {
     let area = frame.area();
 
-    let [list_area, status_area, input_area] = Layout::vertical([
+    let [list_area, preview_area, status_area, input_area] = Layout::vertical([
         Constraint::Fill(1),
+        Constraint::Length(1),
         Constraint::Length(1),
         Constraint::Length(1),
     ])
@@ -298,6 +313,8 @@ fn render(frame: &mut ratatui::Frame, items: &[PickerItem], state: &mut PickerSt
     state.visible_rows = usize::from(list_area.height);
     frame.render_stateful_widget(list, list_area, &mut state.list_state);
 
+    render_preview(frame, preview_area, items, state);
+
     let status_text = format!("  [{match_count}/{total}]");
     let status = Paragraph::new(status_text).style(Style::default().fg(Color::DarkGray));
     frame.render_widget(status, status_area);
@@ -309,6 +326,30 @@ fn render(frame: &mut ratatui::Frame, items: &[PickerItem], state: &mut PickerSt
     #[allow(clippy::cast_possible_truncation)]
     let cursor_x = input_area.x + PROMPT.len() as u16 + state.query.len() as u16;
     frame.set_cursor_position((cursor_x, input_area.y));
+}
+
+fn render_preview(
+    frame: &mut ratatui::Frame,
+    area: ratatui::layout::Rect,
+    items: &[PickerItem],
+    state: &PickerState,
+) {
+    let text = selected_meta(items, state).map_or_else(String::new, format_preview);
+    let preview = Paragraph::new(text).style(Style::default().fg(Color::DarkGray));
+    frame.render_widget(preview, area);
+}
+
+fn selected_meta<'a>(items: &'a [PickerItem], state: &PickerState) -> Option<&'a PickerMeta> {
+    let sel = state.list_state.selected()?;
+    let scored = state.scored.get(sel)?;
+    items[scored.index].meta.as_ref()
+}
+
+fn format_preview(meta: &PickerMeta) -> String {
+    let ns = meta.namespace.as_deref().unwrap_or("-");
+    let cluster = meta.cluster.as_deref().unwrap_or("-");
+    let user = meta.user.as_deref().unwrap_or("-");
+    format!("  ns={ns} | cluster={cluster} | user={user}")
 }
 
 /// Build spans for a name string with highlighted match positions.

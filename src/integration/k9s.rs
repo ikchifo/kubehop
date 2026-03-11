@@ -80,6 +80,7 @@ pub fn execute_pick(args: &PickArgs, config: &Config) -> anyhow::Result<()> {
             PickerItem {
                 name: item.name.clone(),
                 is_current,
+                meta: None,
             }
         })
         .collect();

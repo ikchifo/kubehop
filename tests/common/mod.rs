@@ -44,6 +44,7 @@ pub fn make_picker_items(names: &[&str], current: Option<&str>) -> Vec<PickerIte
         .map(|n| PickerItem {
             name: (*n).to_string(),
             is_current: current == Some(*n),
+            meta: None,
         })
         .collect()
 }

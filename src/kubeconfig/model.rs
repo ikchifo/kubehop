@@ -29,10 +29,14 @@ pub struct ContextEntry {
 }
 
 /// Fields within a context entry.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 pub struct ContextFields {
     /// The default namespace for this context.
     pub namespace: Option<String>,
+    /// The cluster this context targets.
+    pub cluster: Option<String>,
+    /// The user credential this context authenticates with.
+    pub user: Option<String>,
 }
 
 impl KubeConfigView {

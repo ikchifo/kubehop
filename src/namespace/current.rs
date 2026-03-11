@@ -41,7 +41,10 @@ mod tests {
             current_context: Some("dev".to_owned()),
             contexts: vec![ContextEntry {
                 name: "dev".to_owned(),
-                context: Some(ContextFields { namespace: None }),
+                context: Some(ContextFields {
+                    namespace: None,
+                    ..Default::default()
+                }),
             }],
         };
         assert_eq!(current_namespace(&view).unwrap(), "default");
@@ -55,6 +58,7 @@ mod tests {
                 name: "dev".to_owned(),
                 context: Some(ContextFields {
                     namespace: Some("kube-system".to_owned()),
+                    ..Default::default()
                 }),
             }],
         };
@@ -79,7 +83,10 @@ mod tests {
             current_context: Some("missing".to_owned()),
             contexts: vec![ContextEntry {
                 name: "dev".to_owned(),
-                context: Some(ContextFields { namespace: None }),
+                context: Some(ContextFields {
+                    namespace: None,
+                    ..Default::default()
+                }),
             }],
         };
         assert_eq!(current_namespace(&view).unwrap(), "default");
