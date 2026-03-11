@@ -83,6 +83,7 @@ mod tests {
             .map(|n| PickerItem {
                 name: (*n).to_string(),
                 is_current: false,
+                meta: None,
             })
             .collect()
     }

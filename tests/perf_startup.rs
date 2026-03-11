@@ -40,6 +40,7 @@ fn one_load_invariant_single_parse_serves_list_and_score() {
         .map(|c| PickerItem {
             name: c.name.clone(),
             is_current: c.is_current,
+            meta: None,
         })
         .collect();
 
@@ -76,6 +77,7 @@ fn one_load_invariant_merged_files() {
         .map(|c| PickerItem {
             name: c.name.clone(),
             is_current: c.is_current,
+            meta: None,
         })
         .collect();
 

@@ -722,6 +722,7 @@ fn ns_cmd_interactive(config: &Config, use_fzf: bool) -> anyhow::Result<()> {
         .map(|ns| PickerItem {
             name: ns.clone(),
             is_current: ns == &current_ns,
+            meta: None,
         })
         .collect();
 
