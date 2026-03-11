@@ -26,6 +26,7 @@ USAGE:
   kubens -f, --force <NAME> : switch without checking namespace exists
   kubens --raw              : list namespace names (no prefix, no color)
   kubens --fzf              : use external fzf for interactive selection
+  kubens --completion SHELL : output shell completion (bash, zsh, fish)
   kubens -h, --help         : show this help
   kubens -V, --version      : show version";
 
@@ -40,6 +41,7 @@ USAGE:
   kubectx -u, --unset       : unset the current context
   kubectx --raw             : list context names (no prefix, no color)
   kubectx --fzf             : use external fzf for interactive selection
+  kubectx ns <args>          : namespace mode (see kubens --help)
   kubectx pick [--switch] [--kubeconfig <path>] [--current <ctx>]
                             : interactive picker (k9s plugin)
   kubectx --completion SHELL : output shell completion (bash, zsh, fish)
@@ -61,6 +63,7 @@ pub(crate) enum Command {
     InteractiveFzf,
     Pick(PickArgs),
     Completion { shell: crate::completion::Shell },
+    Ns(NsCommand),
 }
 
 impl Command {
@@ -98,6 +101,7 @@ pub(crate) enum NsCommand {
     Current,
     Unset,
     InteractiveFzf,
+    Completion { shell: crate::completion::Shell },
 }
 
 /// Sentinel returned by `parse_ns_args` when the user requested `--help`
@@ -177,6 +181,10 @@ pub(crate) fn parse_args(args: &[String]) -> anyhow::Result<ParseResult> {
             let pick_args = k9s::parse_pick_args(&args[1..])?;
             Ok(ParseResult::Run(Command::Pick(pick_args)))
         }
+        "ns" => match parse_ns_args(&args[1..])? {
+            NsParseResult::Run(ns_cmd) => Ok(ParseResult::Run(Command::Ns(ns_cmd))),
+            NsParseResult::Exit => Ok(ParseResult::Exit),
+        },
         arg if arg.starts_with('-') => {
             bail!("unknown flag: {arg}\nRun with --help for usage information")
         }
@@ -253,6 +261,18 @@ pub(crate) fn parse_ns_args(args: &[String]) -> anyhow::Result<NsParseResult> {
         "-" => {
             ensure_no_extra(args, "-")?;
             Ok(NsParseResult::Run(NsCommand::SwapPrevious))
+        }
+        "--completion" => {
+            let shell_name = args.get(1).map(String::as_str).ok_or_else(|| {
+                anyhow::anyhow!("--completion requires a shell name (bash, zsh, fish)")
+            })?;
+            if args.len() > 2 {
+                bail!("--completion takes exactly one argument");
+            }
+            let shell = shell_name
+                .parse::<crate::completion::Shell>()
+                .map_err(|e| anyhow::anyhow!("{e}"))?;
+            Ok(NsParseResult::Run(NsCommand::Completion { shell }))
         }
         "-f" | "--force" => {
             let target = args
@@ -407,6 +427,7 @@ fn dispatch_command(command: Command, config: &Config) -> anyhow::Result<()> {
             print!("{}", crate::completion::generate(shell));
             Ok(())
         }
+        Command::Ns(ns_cmd) => dispatch_ns_command(ns_cmd, config),
     }
 }
 
@@ -594,6 +615,10 @@ fn dispatch_ns_command(command: NsCommand, config: &Config) -> anyhow::Result<()
         NsCommand::SwapPrevious => ns_cmd_swap_previous(config),
         NsCommand::Unset => ns_cmd_unset(config),
         NsCommand::InteractiveFzf => ns_cmd_interactive(config, true),
+        NsCommand::Completion { shell } => {
+            print!("{}", crate::completion::generate_kubens(shell));
+            Ok(())
+        }
     }
 }
 
@@ -1046,6 +1071,54 @@ mod tests {
         assert!(err.contains("unknown pick flag"), "{err}");
     }
 
+    // -- Ns subcommand --
+
+    #[test]
+    fn ns_subcommand_no_args_produces_list() {
+        assert_eq!(expect_cmd(&["ns"]), Command::Ns(NsCommand::List));
+    }
+
+    #[test]
+    fn ns_subcommand_switch_target() {
+        assert_eq!(
+            expect_cmd(&["ns", "kube-system"]),
+            Command::Ns(NsCommand::Switch {
+                target: "kube-system".to_owned(),
+                force: false,
+            })
+        );
+    }
+
+    #[test]
+    fn ns_subcommand_current() {
+        assert_eq!(expect_cmd(&["ns", "-c"]), Command::Ns(NsCommand::Current));
+    }
+
+    #[test]
+    fn ns_subcommand_help_produces_exit() {
+        expect_exit(&["ns", "--help"]);
+    }
+
+    #[test]
+    fn ns_subcommand_force_switch() {
+        assert_eq!(
+            expect_cmd(&["ns", "-f", "kube-system"]),
+            Command::Ns(NsCommand::Switch {
+                target: "kube-system".to_owned(),
+                force: true,
+            })
+        );
+    }
+
+    #[test]
+    fn ns_subcommand_does_not_modify_context() {
+        let cmd = Command::Ns(NsCommand::Switch {
+            target: "default".to_owned(),
+            force: false,
+        });
+        assert!(!cmd.modifies_context());
+    }
+
     // -- Completion --
 
     #[test]
@@ -1318,5 +1391,49 @@ mod tests {
     fn ns_name_with_multiple_extra_is_error() {
         let err = expect_ns_err(&["kube-system", "-f", "extra"]);
         assert!(err.contains("unexpected extra arguments"), "{err}");
+    }
+
+    // -- kubens Completion --
+
+    #[test]
+    fn ns_completion_bash_parses() {
+        assert_eq!(
+            expect_ns_cmd(&["--completion", "bash"]),
+            NsCommand::Completion {
+                shell: crate::completion::Shell::Bash
+            }
+        );
+    }
+
+    #[test]
+    fn ns_completion_zsh_parses() {
+        assert_eq!(
+            expect_ns_cmd(&["--completion", "zsh"]),
+            NsCommand::Completion {
+                shell: crate::completion::Shell::Zsh
+            }
+        );
+    }
+
+    #[test]
+    fn ns_completion_fish_parses() {
+        assert_eq!(
+            expect_ns_cmd(&["--completion", "fish"]),
+            NsCommand::Completion {
+                shell: crate::completion::Shell::Fish
+            }
+        );
+    }
+
+    #[test]
+    fn ns_completion_without_shell_is_error() {
+        let err = expect_ns_err(&["--completion"]);
+        assert!(err.contains("requires a shell name"), "{err}");
+    }
+
+    #[test]
+    fn ns_completion_with_extra_args_is_error() {
+        let err = expect_ns_err(&["--completion", "bash", "extra"]);
+        assert!(err.contains("takes exactly one argument"), "{err}");
     }
 }
