@@ -3,6 +3,7 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context as _, bail};
+use crossterm::style::Stylize;
 
 use crate::context::state::StateFile;
 use crate::context::{current, list, mutate, switch};
@@ -23,6 +24,7 @@ USAGE:
   kubens -c, --current      : show the current namespace
   kubens -u, --unset        : reset namespace to default
   kubens -f, --force <NAME> : switch without checking namespace exists
+  kubens --raw              : list namespace names (no prefix, no color)
   kubens --fzf              : use external fzf for interactive selection
   kubens -h, --help         : show this help
   kubens -V, --version      : show version";
@@ -36,6 +38,7 @@ USAGE:
   kubectx -d, --delete NAME [NAME...] : delete context(s) ('.' for current)
   kubectx <NEW>=<OLD>       : rename context <OLD> to <NEW> ('.' for current)
   kubectx -u, --unset       : unset the current context
+  kubectx --raw             : list context names (no prefix, no color)
   kubectx --fzf             : use external fzf for interactive selection
   kubectx pick [--switch] [--kubeconfig <path>] [--current <ctx>]
                             : interactive picker (k9s plugin)
@@ -48,6 +51,7 @@ USAGE:
 #[non_exhaustive]
 pub(crate) enum Command {
     List,
+    ListRaw,
     Switch { target: String },
     SwapPrevious,
     Current,
@@ -88,6 +92,7 @@ pub(crate) enum ParseResult {
 #[non_exhaustive]
 pub(crate) enum NsCommand {
     List,
+    ListRaw,
     Switch { target: String, force: bool },
     SwapPrevious,
     Current,
@@ -143,6 +148,10 @@ pub(crate) fn parse_args(args: &[String]) -> anyhow::Result<ParseResult> {
             }
 
             Ok(ParseResult::Run(Command::Delete { targets }))
+        }
+        "--raw" => {
+            ensure_no_extra(args, "--raw")?;
+            Ok(ParseResult::Run(Command::ListRaw))
         }
         "--fzf" => {
             ensure_no_extra(args, "--fzf")?;
@@ -232,6 +241,10 @@ pub(crate) fn parse_ns_args(args: &[String]) -> anyhow::Result<NsParseResult> {
         "-u" | "--unset" => {
             ensure_no_extra(args, first)?;
             Ok(NsParseResult::Run(NsCommand::Unset))
+        }
+        "--raw" => {
+            ensure_no_extra(args, "--raw")?;
+            Ok(NsParseResult::Run(NsCommand::ListRaw))
         }
         "--fzf" => {
             ensure_no_extra(args, "--fzf")?;
@@ -381,6 +394,7 @@ fn dispatch_command(command: Command, config: &Config) -> anyhow::Result<()> {
 
     match command {
         Command::List => cmd_list_or_interactive(config),
+        Command::ListRaw => cmd_list_raw(config),
         Command::Current => cmd_current(config),
         Command::Switch { target } => cmd_switch(config, &target),
         Command::SwapPrevious => cmd_swap_previous(config),
@@ -400,6 +414,15 @@ fn load_merged_view(config: &Config) -> anyhow::Result<KubeConfigView> {
     KubeConfigView::load_merged(&config.kubeconfig_paths).context("failed to load kubeconfig")
 }
 
+/// Load the merged kubeconfig, returning `None` if the file does not exist.
+fn load_merged_or_empty(config: &Config) -> anyhow::Result<Option<KubeConfigView>> {
+    match KubeConfigView::load_merged(&config.kubeconfig_paths) {
+        Ok(v) => Ok(Some(v)),
+        Err(e) if e.is_not_found() => Ok(None),
+        Err(e) => Err(e).context("failed to load kubeconfig"),
+    }
+}
+
 fn cmd_list_or_interactive(config: &Config) -> anyhow::Result<()> {
     let is_tty = std::io::IsTerminal::is_terminal(&std::io::stdout());
     let ignore_fzf = std::env::var_os("KUBECTX_IGNORE_FZF").is_some();
@@ -408,20 +431,41 @@ fn cmd_list_or_interactive(config: &Config) -> anyhow::Result<()> {
         return cmd_interactive(config, false);
     }
 
-    let view = match KubeConfigView::load_merged(&config.kubeconfig_paths) {
-        Ok(v) => v,
-        Err(e) if e.is_not_found() => return Ok(()),
-        Err(e) => return Err(e).context("failed to load kubeconfig"),
+    let Some(view) = load_merged_or_empty(config)? else {
+        return Ok(());
+    };
+
+    let items = list::list_contexts(&view).context("failed to list contexts")?;
+    let use_color = config.force_color || (is_tty && !config.no_color);
+
+    for item in &items {
+        print_list_item(&item.name, item.is_current, use_color);
+    }
+
+    Ok(())
+}
+
+fn print_list_item(name: &str, is_current: bool, use_color: bool) {
+    if is_current {
+        if use_color {
+            println!("{}", format!("* {name}").green().bold());
+        } else {
+            println!("* {name}");
+        }
+    } else {
+        println!("  {name}");
+    }
+}
+
+fn cmd_list_raw(config: &Config) -> anyhow::Result<()> {
+    let Some(view) = load_merged_or_empty(config)? else {
+        return Ok(());
     };
 
     let items = list::list_contexts(&view).context("failed to list contexts")?;
 
     for item in &items {
-        if item.is_current {
-            println!("* {}", item.name);
-        } else {
-            println!("  {}", item.name);
-        }
+        println!("{}", item.name);
     }
 
     Ok(())
@@ -544,6 +588,7 @@ fn cmd_unset(config: &Config) -> anyhow::Result<()> {
 fn dispatch_ns_command(command: NsCommand, config: &Config) -> anyhow::Result<()> {
     match command {
         NsCommand::List => ns_cmd_list_or_interactive(config),
+        NsCommand::ListRaw => ns_cmd_list_raw(config),
         NsCommand::Current => ns_cmd_current(config),
         NsCommand::Switch { target, force } => ns_cmd_switch(config, &target, force),
         NsCommand::SwapPrevious => ns_cmd_swap_previous(config),
@@ -618,12 +663,22 @@ fn ns_cmd_list_or_interactive(config: &Config) -> anyhow::Result<()> {
     let namespaces =
         crate::namespace::list::list_namespaces(write_path).context("failed to list namespaces")?;
 
+    let use_color = config.force_color || (is_tty && !config.no_color);
+
     for ns in &namespaces {
-        if ns == &current_ns {
-            println!("* {ns}");
-        } else {
-            println!("  {ns}");
-        }
+        print_list_item(ns, ns == &current_ns, use_color);
+    }
+
+    Ok(())
+}
+
+fn ns_cmd_list_raw(config: &Config) -> anyhow::Result<()> {
+    let write_path = primary_kubeconfig(config)?;
+    let namespaces =
+        crate::namespace::list::list_namespaces(write_path).context("failed to list namespaces")?;
+
+    for ns in &namespaces {
+        println!("{ns}");
     }
 
     Ok(())
@@ -895,6 +950,22 @@ mod tests {
     #[test]
     fn fzf_rejects_extra_args() {
         let err = expect_err(&["--fzf", "foo"]);
+        assert!(
+            err.contains("does not accept additional arguments"),
+            "{err}"
+        );
+    }
+
+    // -- Raw flag --
+
+    #[test]
+    fn raw_flag_produces_list_raw() {
+        assert_eq!(expect_cmd(&["--raw"]), Command::ListRaw);
+    }
+
+    #[test]
+    fn raw_rejects_extra_args() {
+        let err = expect_err(&["--raw", "foo"]);
         assert!(
             err.contains("does not accept additional arguments"),
             "{err}"
@@ -1177,6 +1248,22 @@ mod tests {
     #[test]
     fn ns_fzf_rejects_extra_args() {
         let err = expect_ns_err(&["--fzf", "foo"]);
+        assert!(
+            err.contains("does not accept additional arguments"),
+            "{err}"
+        );
+    }
+
+    // -- Raw flag --
+
+    #[test]
+    fn ns_raw_flag_produces_list_raw() {
+        assert_eq!(expect_ns_cmd(&["--raw"]), NsCommand::ListRaw);
+    }
+
+    #[test]
+    fn ns_raw_rejects_extra_args() {
+        let err = expect_ns_err(&["--raw", "foo"]);
         assert!(
             err.contains("does not accept additional arguments"),
             "{err}"

@@ -23,6 +23,9 @@ use super::{PickerItem, PickerResult};
 /// Maximum visible lines for the inline viewport (prompt + list rows).
 const PICKER_HEIGHT: u16 = 15;
 
+/// Number of items to jump when paging up/down.
+const PAGE_STEP: usize = (PICKER_HEIGHT - 2) as usize;
+
 const PROMPT: &str = "> ";
 
 /// Launch an inline fuzzy picker on stderr and return the user's selection.
@@ -121,6 +124,31 @@ impl PickerState {
         }
     }
 
+    fn page_up(&mut self, step: usize) {
+        if let Some(i) = self.list_state.selected() {
+            self.list_state.select(Some(i.saturating_sub(step)));
+        }
+    }
+
+    fn page_down(&mut self, step: usize) {
+        if let Some(i) = self.list_state.selected() {
+            let last = self.scored.len().saturating_sub(1);
+            self.list_state.select(Some((i + step).min(last)));
+        }
+    }
+
+    fn move_first(&mut self) {
+        if !self.scored.is_empty() {
+            self.list_state.select(Some(0));
+        }
+    }
+
+    fn move_last(&mut self) {
+        if !self.scored.is_empty() {
+            self.list_state.select(Some(self.scored.len() - 1));
+        }
+    }
+
     fn selected_name<'a>(&self, items: &'a [PickerItem]) -> Option<&'a str> {
         let sel = self.list_state.selected()?;
         let scored = self.scored.get(sel)?;
@@ -137,6 +165,8 @@ fn run_picker_loop(
     loop {
         terminal.draw(|frame| render(frame, items, &mut state))?;
 
+        // Non-key events (resize, mouse, focus, paste) are ignored; the next
+        // `terminal.draw()` at the top of the loop redraws with new dimensions.
         if let Event::Key(key) = event::read()? {
             if key.kind != KeyEventKind::Press {
                 continue;
@@ -147,6 +177,9 @@ fn run_picker_loop(
             match key.code {
                 KeyCode::Esc => return Ok(PickerResult::Cancelled),
                 KeyCode::Char('c') if ctrl => return Ok(PickerResult::Cancelled),
+                KeyCode::Char('l') if ctrl => {
+                    terminal.clear()?;
+                }
                 KeyCode::Char('z') if ctrl => {
                     suspend(terminal)?;
                 }
@@ -157,7 +190,23 @@ fn run_picker_loop(
                     });
                 }
                 KeyCode::Up => state.move_up(),
+                KeyCode::Char('p') if ctrl => state.move_up(),
                 KeyCode::Down => state.move_down(),
+                KeyCode::Char('n') if ctrl => state.move_down(),
+                KeyCode::PageUp => state.page_up(PAGE_STEP),
+                KeyCode::PageDown => state.page_down(PAGE_STEP),
+                KeyCode::Home => state.move_first(),
+                KeyCode::End => state.move_last(),
+                KeyCode::Char('u') if ctrl => {
+                    state.query.clear();
+                    state.update_scores(items);
+                }
+                KeyCode::Char('w') if ctrl => {
+                    let trimmed = state.query.trim_end();
+                    let boundary = trimmed.rfind(' ').map_or(0, |pos| pos + 1);
+                    state.query.truncate(boundary);
+                    state.update_scores(items);
+                }
                 KeyCode::Backspace => {
                     state.query.pop();
                     state.update_scores(items);
