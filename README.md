@@ -45,42 +45,15 @@ brew install ikchifo/tap/khop
 curl --proto '=https' --tlsv1.2 -LsSf https://github.com/ikchifo/kubehop/releases/latest/download/khop-installer.sh | sh
 ```
 
-### PowerShell installer (Windows)
-
-```powershell
-powershell -ExecutionPolicy Bypass -c "irm https://github.com/ikchifo/kubehop/releases/latest/download/khop-installer.ps1 | iex"
-```
-
-### Pre-built binaries
-
-Download from the
-[latest release](https://github.com/ikchifo/kubehop/releases/latest).
-Each release includes binaries for:
-
-- `x86_64-apple-darwin` (macOS Intel)
-- `aarch64-apple-darwin` (macOS Apple Silicon)
-- `x86_64-unknown-linux-gnu` (Linux x64)
-- `aarch64-unknown-linux-gnu` (Linux ARM64)
-- `x86_64-pc-windows-msvc` (Windows x64)
-
-### From crates.io
+### Cargo
 
 ```sh
 cargo install khop
 ```
 
-### From source
-
-```sh
-cargo install --git https://github.com/ikchifo/kubehop
-```
-
-After installing, you have a binary called `khop`:
-
-```sh
-khop              # context switching mode (default)
-khop -c           # show current context
-```
+Pre-built binaries and a PowerShell installer are also
+available on the
+[releases page](https://github.com/ikchifo/kubehop/releases/latest).
 
 ### Optional: kubectx/kubens symlinks
 
