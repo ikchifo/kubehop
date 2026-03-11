@@ -27,7 +27,9 @@ dependencies. Written in Rust.
 - **Batch operations** -- delete multiple contexts in one
   command
 - **k9s plugin** support via a `pick` subcommand
-- **Shell completions** for bash, zsh, and fish
+- **Shell completions** for bash, zsh, and fish with
+  dynamic context/namespace name completion
+- **`--raw` output** for scripting (no prefixes, no color)
 - Optional **[fzf](https://github.com/junegunn/fzf)
   fallback** via `--fzf` flag
 
@@ -66,12 +68,12 @@ ln -s ~/.cargo/bin/khop ~/.cargo/bin/kubectx
 ln -s ~/.cargo/bin/khop ~/.cargo/bin/kubens
 ```
 
-The binary name (argv0) determines the mode:
+The binary name (argv0) determines the default mode:
 
 | Invoked as | Mode |
 |---|---|
 | `khop`, `kubectx`, `kubectl-ctx` | Context switching |
-| `kubens`, `kubectl-ns` | Namespace switching |
+| `khop ns`, `kubens`, `kubectl-ns` | Namespace switching |
 
 ## Usage
 
@@ -85,42 +87,52 @@ khop <new>=<old>                 Rename context ('.' for current)
 khop -c, --current               Show current context name
 khop -d, --delete NAME [NAME...] Delete context(s) ('.' for current)
 khop -u, --unset                 Unset current context
+khop --raw                       List context names (no prefix, no color)
 khop --fzf                       Use external fzf for selection
+khop ns <args>                   Namespace mode (see below)
 khop --completion <shell>        Output shell completion (bash/zsh/fish)
 ```
 
 ### Namespace switching
 
-Namespace switching requires invoking the binary as `kubens`
-or `kubectl-ns` (see
-[symlinks](#optional-kubectxkubens-symlinks) above):
+Use `khop ns` or invoke the binary as `kubens` / `kubectl-ns`
+(see [symlinks](#optional-kubectxkubens-symlinks) above):
 
 ```
-kubens                      List namespaces (interactive if TTY)
-kubens <name>               Switch namespace
-kubens -                    Switch to previous namespace
-kubens -f, --force <name>   Switch without existence check
-kubens <name> -f            Same, trailing form
-kubens -c, --current        Show current namespace
-kubens -u, --unset          Reset namespace to "default"
-kubens --fzf                Use external fzf for selection
+khop ns                     List namespaces (interactive if TTY)
+khop ns <name>              Switch namespace
+khop ns -                   Switch to previous namespace
+khop ns -f, --force <name>  Switch without existence check
+khop ns <name> -f           Same, trailing form
+khop ns -c, --current       Show current namespace
+khop ns -u, --unset         Reset namespace to "default"
+khop ns --raw               List namespace names (no prefix, no color)
+khop ns --fzf               Use external fzf for selection
+khop ns --completion <shell> Output shell completion (bash/zsh/fish)
 ```
+
+All `khop ns` commands also work when invoked as `kubens`
+(e.g. `kubens kube-system`).
 
 ## Shell completions
 
+Context and namespace names are completed dynamically.
+
 ```sh
-# bash
+# bash (kubectx)
 khop --completion bash > ~/.local/share/bash-completion/completions/khop
 
-# zsh
+# zsh (kubectx)
 khop --completion zsh > ~/.zfunc/_khop
 
-# fish
+# fish (kubectx)
 khop --completion fish > ~/.config/fish/completions/khop.fish
-```
 
-The `completion/` directory has pre-generated scripts for
-both `kubectx` and `kubens`.
+# kubens (if using symlinks)
+kubens --completion bash > ~/.local/share/bash-completion/completions/kubens
+kubens --completion zsh  > ~/.zfunc/_kubens
+kubens --completion fish > ~/.config/fish/completions/kubens.fish
+```
 
 ## k9s plugin
 
