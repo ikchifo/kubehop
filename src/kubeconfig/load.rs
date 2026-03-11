@@ -26,7 +26,11 @@ impl KubeConfigView {
     /// Returns `KubeconfigError::Read` if the file cannot be opened,
     /// or `KubeconfigError::Parse` if the YAML is invalid.
     pub fn load(path: impl AsRef<Path>) -> Result<Self, KubeconfigError> {
-        let file = std::fs::File::open(path.as_ref()).map_err(KubeconfigError::Read)?;
+        let path = path.as_ref();
+        let file = std::fs::File::open(path).map_err(|source| KubeconfigError::Read {
+            path: path.to_path_buf(),
+            source,
+        })?;
         let reader = std::io::BufReader::new(file);
         Self::from_reader(reader)
     }

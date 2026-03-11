@@ -14,7 +14,10 @@ const KEY_NAME: &str = "name";
 
 /// Load a kubeconfig file into a generic YAML document.
 pub(crate) fn load_yaml_doc(path: &Path) -> Result<Value, ContextError> {
-    let raw = fs::read_to_string(path).map_err(KubeconfigError::Read)?;
+    let raw = fs::read_to_string(path).map_err(|source| KubeconfigError::Read {
+        path: path.to_path_buf(),
+        source,
+    })?;
     serde_yaml::from_str(&raw)
         .map_err(KubeconfigError::Parse)
         .map_err(Into::into)
@@ -23,7 +26,10 @@ pub(crate) fn load_yaml_doc(path: &Path) -> Result<Value, ContextError> {
 /// Serialize and write a YAML document back to disk.
 pub(crate) fn write_yaml_doc(path: &Path, doc: &Value) -> Result<(), ContextError> {
     let out = serde_yaml::to_string(doc).map_err(KubeconfigError::Parse)?;
-    fs::write(path, out).map_err(KubeconfigError::Write)?;
+    fs::write(path, out).map_err(|source| KubeconfigError::Write {
+        path: path.to_path_buf(),
+        source,
+    })?;
     Ok(())
 }
 

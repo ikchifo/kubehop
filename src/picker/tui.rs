@@ -31,28 +31,45 @@ const PROMPT: &str = "> ";
 /// `Viewport::Inline`, scores items with `nucleo-matcher`, and
 /// accepts keyboard input for filtering and navigation.
 ///
+/// Terminal state is restored via RAII (`TerminalGuard`) so cleanup
+/// happens even on panic.
+///
 /// # Errors
 ///
 /// Returns an error if terminal setup, rendering, or event reading fails.
 pub fn pick_inline(items: &[PickerItem]) -> anyhow::Result<PickerResult> {
-    enable_raw_mode()?;
-    crossterm::execute!(stderr(), SetCursorStyle::BlinkingBlock)?;
+    let mut guard = TerminalGuard::new()?;
+    run_picker_loop(&mut guard.terminal, items)
+}
 
-    let backend = CrosstermBackend::new(stderr());
-    let mut terminal = Terminal::with_options(
-        backend,
-        TerminalOptions {
-            viewport: Viewport::Inline(PICKER_HEIGHT),
-        },
-    )?;
+/// RAII guard that restores terminal state on drop.
+struct TerminalGuard {
+    terminal: Terminal<CrosstermBackend<Stderr>>,
+}
 
-    let result = run_picker_loop(&mut terminal, items);
+impl TerminalGuard {
+    fn new() -> anyhow::Result<Self> {
+        enable_raw_mode()?;
+        crossterm::execute!(stderr(), SetCursorStyle::BlinkingBlock)?;
 
-    crossterm::execute!(stderr(), SetCursorStyle::DefaultUserShape)?;
-    disable_raw_mode()?;
-    terminal.clear()?;
+        let backend = CrosstermBackend::new(stderr());
+        let terminal = Terminal::with_options(
+            backend,
+            TerminalOptions {
+                viewport: Viewport::Inline(PICKER_HEIGHT),
+            },
+        )?;
 
-    result
+        Ok(Self { terminal })
+    }
+}
+
+impl Drop for TerminalGuard {
+    fn drop(&mut self) {
+        let _ = crossterm::execute!(stderr(), SetCursorStyle::DefaultUserShape);
+        let _ = disable_raw_mode();
+        let _ = self.terminal.clear();
+    }
 }
 
 /// Mutable state driving the picker event loop.

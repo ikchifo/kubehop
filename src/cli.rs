@@ -33,8 +33,8 @@ USAGE:
   kubectx <NAME>            : switch to context <NAME>
   kubectx -                 : switch to the previous context
   kubectx -c, --current     : show the current context name
-  kubectx -d, --delete NAME : delete context NAME (or '.' for current)
-  kubectx <NEW>=<OLD>       : rename context <OLD> to <NEW>
+  kubectx -d, --delete NAME [NAME...] : delete context(s) ('.' for current)
+  kubectx <NEW>=<OLD>       : rename context <OLD> to <NEW> ('.' for current)
   kubectx -u, --unset       : unset the current context
   kubectx --fzf             : use external fzf for interactive selection
   kubectx pick [--switch] [--kubeconfig <path>] [--current <ctx>]
@@ -51,7 +51,7 @@ pub(crate) enum Command {
     Switch { target: String },
     SwapPrevious,
     Current,
-    Delete { target: String },
+    Delete { targets: Vec<String> },
     Rename { old: String, new_name: String },
     Unset,
     InteractiveFzf,
@@ -132,19 +132,17 @@ pub(crate) fn parse_args(args: &[String]) -> anyhow::Result<ParseResult> {
             Ok(ParseResult::Run(Command::Unset))
         }
         "-d" | "--delete" => {
-            let target = args
-                .get(1)
-                .map(String::as_str)
+            let targets: Vec<String> = args[1..]
+                .iter()
                 .filter(|s| !s.is_empty())
-                .ok_or_else(|| anyhow::anyhow!("{first} requires a context name"))?;
+                .cloned()
+                .collect();
 
-            if args.len() > 2 {
-                bail!("{first} takes exactly one argument");
+            if targets.is_empty() {
+                bail!("{first} requires at least one context name");
             }
 
-            Ok(ParseResult::Run(Command::Delete {
-                target: target.to_owned(),
-            }))
+            Ok(ParseResult::Run(Command::Delete { targets }))
         }
         "--fzf" => {
             ensure_no_extra(args, "--fzf")?;
@@ -386,7 +384,7 @@ fn dispatch_command(command: Command, config: &Config) -> anyhow::Result<()> {
         Command::Current => cmd_current(config),
         Command::Switch { target } => cmd_switch(config, &target),
         Command::SwapPrevious => cmd_swap_previous(config),
-        Command::Delete { target } => cmd_delete(config, &target),
+        Command::Delete { ref targets } => cmd_delete(config, targets),
         Command::Rename { old, new_name } => cmd_rename(config, &old, &new_name),
         Command::Unset => cmd_unset(config),
         Command::InteractiveFzf => cmd_interactive(config, true),
@@ -410,7 +408,12 @@ fn cmd_list_or_interactive(config: &Config) -> anyhow::Result<()> {
         return cmd_interactive(config, false);
     }
 
-    let view = load_merged_view(config)?;
+    let view = match KubeConfigView::load_merged(&config.kubeconfig_paths) {
+        Ok(v) => v,
+        Err(e) if e.is_not_found() => return Ok(()),
+        Err(e) => return Err(e).context("failed to load kubeconfig"),
+    };
+
     let items = list::list_contexts(&view).context("failed to list contexts")?;
 
     for item in &items {
@@ -476,29 +479,45 @@ fn cmd_swap_previous(config: &Config) -> anyhow::Result<()> {
     cmd_switch(config, &previous)
 }
 
-fn cmd_delete(config: &Config, target: &str) -> anyhow::Result<()> {
+fn cmd_delete(config: &Config, targets: &[String]) -> anyhow::Result<()> {
     let write_path = primary_kubeconfig(config)?;
 
-    let result = if target == "." {
-        mutate::delete_current_context(write_path).context("failed to delete current context")?
-    } else {
-        mutate::delete_context(write_path, target)
-            .with_context(|| format!("failed to delete context {target:?}"))?
-    };
+    for target in targets {
+        let result = if target == "." {
+            mutate::delete_current_context(write_path)
+                .context("failed to delete current context")?
+        } else {
+            mutate::delete_context(write_path, target)
+                .with_context(|| format!("failed to delete context {target:?}"))?
+        };
 
-    if result.was_current {
-        eprintln!(
-            "Deleted context \"{}\" (was current, now unset).",
-            result.deleted
-        );
-    } else {
-        eprintln!("Deleted context \"{}\".", result.deleted);
+        if result.was_current {
+            eprintln!(
+                "Deleted context \"{}\" (was current, now unset).",
+                result.deleted
+            );
+        } else {
+            eprintln!("Deleted context \"{}\".", result.deleted);
+        }
     }
     Ok(())
 }
 
 fn cmd_rename(config: &Config, old: &str, new_name: &str) -> anyhow::Result<()> {
     let write_path = primary_kubeconfig(config)?;
+
+    let resolved_old;
+    let old = if old == "." {
+        let view = load_merged_view(config)?;
+        resolved_old = view
+            .current_context()
+            .ok_or_else(|| anyhow::anyhow!("cannot resolve '.' — no current context set"))?
+            .to_owned();
+        resolved_old.as_str()
+    } else {
+        old
+    };
+
     let result = mutate::rename_context(write_path, old, new_name)
         .with_context(|| format!("failed to rename context {old:?} to {new_name:?}"))?;
 
@@ -649,9 +668,8 @@ fn primary_kubeconfig(config: &Config) -> anyhow::Result<&Path> {
 
 fn resolve_kubeconfig_paths() -> Vec<PathBuf> {
     if let Ok(val) = std::env::var("KUBECONFIG") {
-        val.split(':')
-            .filter(|s| !s.is_empty())
-            .map(PathBuf::from)
+        std::env::split_paths(&val)
+            .filter(|p| !p.as_os_str().is_empty())
             .collect()
     } else {
         let home = directories::BaseDirs::new()
@@ -755,7 +773,7 @@ mod tests {
         assert_eq!(
             expect_cmd(&["-d", "staging"]),
             Command::Delete {
-                target: "staging".to_owned()
+                targets: vec!["staging".to_owned()]
             }
         );
     }
@@ -765,7 +783,17 @@ mod tests {
         assert_eq!(
             expect_cmd(&["--delete", "."]),
             Command::Delete {
-                target: ".".to_owned()
+                targets: vec![".".to_owned()]
+            }
+        );
+    }
+
+    #[test]
+    fn delete_multiple_targets() {
+        assert_eq!(
+            expect_cmd(&["-d", "staging", "dev", "test"]),
+            Command::Delete {
+                targets: vec!["staging".to_owned(), "dev".to_owned(), "test".to_owned(),]
             }
         );
     }
@@ -773,13 +801,7 @@ mod tests {
     #[test]
     fn delete_without_name_is_error() {
         let err = expect_err(&["-d"]);
-        assert!(err.contains("requires a context name"), "{err}");
-    }
-
-    #[test]
-    fn delete_with_extra_args_is_error() {
-        let err = expect_err(&["-d", "a", "b"]);
-        assert!(err.contains("takes exactly one argument"), "{err}");
+        assert!(err.contains("requires at least one context name"), "{err}");
     }
 
     // -- Swap previous --

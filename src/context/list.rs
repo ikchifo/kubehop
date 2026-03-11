@@ -42,65 +42,67 @@ pub fn list_contexts(view: &KubeConfigView) -> Result<Vec<ContextListItem>, supe
     Ok(items)
 }
 
-/// Segment of a string split into text and numeric parts for natural ordering.
-#[derive(Debug, PartialEq, Eq)]
-enum Segment<'a> {
-    Text(&'a str),
-    Numeric(u64, usize), // (value, original digit count for tie-breaking)
-}
-
-/// Split a string into alternating text and numeric segments.
-fn segments(s: &str) -> Vec<Segment<'_>> {
-    let mut result = Vec::new();
-    let mut rest = s;
-
-    while !rest.is_empty() {
-        if rest.as_bytes()[0].is_ascii_digit() {
-            let end = rest
-                .find(|c: char| !c.is_ascii_digit())
-                .unwrap_or(rest.len());
-            let digits = &rest[..end];
-            let value = digits.parse::<u64>().unwrap_or(u64::MAX);
-            result.push(Segment::Numeric(value, digits.len()));
-            rest = &rest[end..];
-        } else {
-            let end = rest
-                .find(|c: char| c.is_ascii_digit())
-                .unwrap_or(rest.len());
-            result.push(Segment::Text(&rest[..end]));
-            rest = &rest[end..];
-        }
-    }
-
-    result
-}
-
-/// Compare two strings in natural sort order.
+/// Compare two strings in natural sort order without allocation.
 ///
 /// Runs of digits are compared numerically (so `"2" < "10"`), while
-/// non-digit runs are compared lexicographically. When numeric values
+/// non-digit bytes are compared lexicographically. When numeric values
 /// are equal, shorter digit runs sort first (e.g., `"02"` before `"002"`).
 fn natural_cmp(a: &str, b: &str) -> std::cmp::Ordering {
-    let segs_a = segments(a);
-    let segs_b = segments(b);
+    use std::cmp::Ordering;
 
-    for (sa, sb) in segs_a.iter().zip(segs_b.iter()) {
-        let ord = match (sa, sb) {
-            (Segment::Numeric(va, la), Segment::Numeric(vb, lb)) => {
-                va.cmp(vb).then_with(|| la.cmp(lb))
+    let mut a = a.as_bytes();
+    let mut b = b.as_bytes();
+
+    loop {
+        match (a.first(), b.first()) {
+            (None, None) => return Ordering::Equal,
+            (None, Some(_)) => return Ordering::Less,
+            (Some(_), None) => return Ordering::Greater,
+            (Some(&ac), Some(&bc)) => {
+                let a_digit = ac.is_ascii_digit();
+                let b_digit = bc.is_ascii_digit();
+
+                if a_digit && b_digit {
+                    let (av, a_len, a_rest) = consume_number(a);
+                    let (bv, b_len, b_rest) = consume_number(b);
+                    let ord = av.cmp(&bv).then_with(|| a_len.cmp(&b_len));
+                    if ord != Ordering::Equal {
+                        return ord;
+                    }
+                    a = a_rest;
+                    b = b_rest;
+                } else if a_digit != b_digit {
+                    return if a_digit {
+                        Ordering::Less
+                    } else {
+                        Ordering::Greater
+                    };
+                } else {
+                    let ord = ac.cmp(&bc);
+                    if ord != Ordering::Equal {
+                        return ord;
+                    }
+                    a = &a[1..];
+                    b = &b[1..];
+                }
             }
-            (Segment::Text(ta), Segment::Text(tb)) => ta.cmp(tb),
-            // Digits sort before text when segment types differ.
-            (Segment::Numeric(..), Segment::Text(..)) => std::cmp::Ordering::Less,
-            (Segment::Text(..), Segment::Numeric(..)) => std::cmp::Ordering::Greater,
-        };
-
-        if ord != std::cmp::Ordering::Equal {
-            return ord;
         }
     }
+}
 
-    segs_a.len().cmp(&segs_b.len())
+/// Consume a run of ASCII digits, returning (numeric value, digit count, remaining bytes).
+fn consume_number(bytes: &[u8]) -> (u64, usize, &[u8]) {
+    let mut val: u64 = 0;
+    let mut len = 0;
+    for &b in bytes {
+        if b.is_ascii_digit() {
+            val = val.saturating_mul(10).saturating_add(u64::from(b - b'0'));
+            len += 1;
+        } else {
+            break;
+        }
+    }
+    (val, len, &bytes[len..])
 }
 
 #[cfg(test)]

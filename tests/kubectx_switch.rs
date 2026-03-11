@@ -176,8 +176,8 @@ fn not_found_does_not_mutate_file() {
 fn switch_on_missing_file_returns_kubeconfig_error() {
     let err = switch_context("/tmp/khop-test-nonexistent-99999.yaml", "dev").unwrap_err();
     assert!(
-        matches!(err, ContextError::Kubeconfig(KubeconfigError::Read(_))),
-        "expected Kubeconfig(Read(_)), got: {err:?}"
+        matches!(err, ContextError::Kubeconfig(KubeconfigError::Read { .. })),
+        "expected Kubeconfig(Read {{ .. }}), got: {err:?}"
     );
 }
 

@@ -144,7 +144,7 @@ contexts:
         let err = switch_context("/tmp/khop-nonexistent-9999.yaml", "dev").unwrap_err();
         assert!(matches!(
             err,
-            ContextError::Kubeconfig(KubeconfigError::Read(_))
+            ContextError::Kubeconfig(KubeconfigError::Read { .. })
         ));
     }
 
