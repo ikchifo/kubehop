@@ -1,4 +1,3 @@
-// Rust guideline compliant 2026-02-21
 //! Argv0-based dispatch for `kubectx` vs `kubens` behavior.
 
 /// Determines whether the binary operates in context or namespace mode.

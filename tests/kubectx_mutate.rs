@@ -1,4 +1,3 @@
-// Rust guideline compliant 2026-02-21
 //! Integration tests for context mutation operations (rename, delete, unset).
 
 #[allow(dead_code)]

@@ -1,4 +1,3 @@
-// Rust guideline compliant 2026-02-21
 //! Shell completion script generation for bash, zsh, and fish.
 
 use std::fmt;

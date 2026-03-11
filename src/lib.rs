@@ -1,4 +1,3 @@
-// Rust guideline compliant 2026-02-21
 //! Fast Kubernetes context and namespace switcher.
 //!
 //! `khop` is the library backing the `kubectx` and `kubens` binaries.

@@ -1,4 +1,3 @@
-// Rust guideline compliant 2026-02-21
 //! Thin wrapper around `nucleo-matcher` for scoring picker items.
 
 use nucleo_matcher::pattern::{AtomKind, CaseMatching, Normalization, Pattern};

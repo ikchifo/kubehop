@@ -1,4 +1,3 @@
-// Rust guideline compliant 2026-02-21
 use mimalloc::MiMalloc;
 
 #[global_allocator]

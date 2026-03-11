@@ -1,4 +1,3 @@
-// Rust guideline compliant 2026-02-21
 //! Context listing with natural sort order.
 
 use crate::kubeconfig::KubeConfigView;

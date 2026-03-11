@@ -1,4 +1,3 @@
-// Rust guideline compliant 2026-02-21
 //! Architectural regression guards for the kubehop interactive path.
 //!
 //! These tests verify structural invariants -- they are NOT performance
@@ -15,7 +14,7 @@ use common::{fixture, make_picker_items, write_temp};
 use khop::context::list::list_contexts;
 use khop::context::switch::switch_context;
 use khop::kubeconfig::KubeConfigView;
-use khop::picker::{score_items, PickerItem};
+use khop::picker::{PickerItem, score_items};
 
 // ---------------------------------------------------------------------------
 // 1. One-load invariant

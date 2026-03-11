@@ -1,4 +1,3 @@
-// Rust guideline compliant 2026-02-21
 //! Kubeconfig file loading with sans-I/O core.
 
 use std::path::{Path, PathBuf};

@@ -1,4 +1,3 @@
-// Rust guideline compliant 2026-02-21
 //! Context operations: list, switch, mutate, state.
 
 pub mod current;

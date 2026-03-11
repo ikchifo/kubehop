@@ -1,4 +1,3 @@
-// Rust guideline compliant 2026-02-21
 //! Shared helpers for `serde_yaml::Value` operations on kubeconfig documents.
 
 use std::fs;

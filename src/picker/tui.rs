@@ -1,10 +1,9 @@
-// Rust guideline compliant 2026-02-21
 //! Inline fuzzy picker using ratatui and crossterm.
 //!
 //! Renders a compact selection UI to stderr using `Viewport::Inline`,
 //! keeping stdout free for machine-readable output.
 
-use std::io::{stderr, Stderr};
+use std::io::{Stderr, stderr};
 
 use crossterm::cursor::SetCursorStyle;
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
@@ -18,7 +17,7 @@ use ratatui::{Terminal, TerminalOptions, Viewport};
 
 use nucleo_matcher::{Config, Matcher};
 
-use super::score::{score_items_with_matcher, ScoredItem};
+use super::score::{ScoredItem, score_items_with_matcher};
 use super::{PickerItem, PickerResult};
 
 /// Maximum visible lines for the inline viewport (prompt + list rows).

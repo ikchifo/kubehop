@@ -1,7 +1,6 @@
-// Rust guideline compliant 2026-02-21
 //! Integration tests for argv0-based tool mode dispatch.
 
-use khop::dispatch::{mode_from_argv0, ToolMode};
+use khop::dispatch::{ToolMode, mode_from_argv0};
 
 #[test]
 fn test_dispatch_kubectx_bare_name() {

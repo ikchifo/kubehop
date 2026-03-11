@@ -1,4 +1,3 @@
-// Rust guideline compliant 2026-02-21
 //! Context switching via full `serde_yaml::Value` round-trip.
 
 use std::path::Path;

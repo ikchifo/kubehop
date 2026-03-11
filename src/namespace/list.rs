@@ -1,4 +1,3 @@
-// Rust guideline compliant 2026-02-21
 //! Namespace listing via kubectl subprocess.
 
 use std::path::Path;

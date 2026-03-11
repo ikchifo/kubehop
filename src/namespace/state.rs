@@ -1,4 +1,3 @@
-// Rust guideline compliant 2026-02-21
 //! Per-context previous-namespace state file persistence.
 
 use std::fs;

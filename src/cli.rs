@@ -1,9 +1,8 @@
-// Rust guideline compliant 2026-02-21
 //! CLI argument parsing and application-level orchestration.
 
 use std::path::{Path, PathBuf};
 
-use anyhow::{bail, Context as _};
+use anyhow::{Context as _, bail};
 
 use crate::context::state::StateFile;
 use crate::context::{current, list, mutate, switch};

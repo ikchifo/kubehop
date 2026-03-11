@@ -1,9 +1,8 @@
-// Rust guideline compliant 2026-02-21
 //! k9s plugin subcommand handler.
 
 use std::path::PathBuf;
 
-use anyhow::{bail, Context as _};
+use anyhow::{Context as _, bail};
 
 use crate::cli::Config;
 use crate::context::{list, switch};

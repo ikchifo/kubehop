@@ -1,11 +1,10 @@
-// Rust guideline compliant 2026-02-21
 //! Integration tests for picker scoring and fuzzy matching.
 
 #[allow(dead_code)]
 mod common;
 
 use common::make_picker_items;
-use khop::picker::{score_items, PickerItem, ScoredItem};
+use khop::picker::{PickerItem, ScoredItem, score_items};
 
 fn make_items(names: &[&str]) -> Vec<PickerItem> {
     make_picker_items(names, None)

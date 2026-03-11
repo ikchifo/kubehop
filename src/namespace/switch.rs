@@ -1,12 +1,11 @@
-// Rust guideline compliant 2026-02-21
 //! Namespace switching via full `serde_yaml::Value` round-trip.
 
 use std::path::Path;
 
 use serde_yaml::Value;
 
-use super::error::NamespaceError;
 use super::DEFAULT_NAMESPACE;
+use super::error::NamespaceError;
 use crate::context::yaml_helpers::{load_yaml_doc, read_current_context, write_yaml_doc};
 
 /// Outcome of a namespace switch operation.

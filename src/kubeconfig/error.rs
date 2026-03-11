@@ -1,4 +1,3 @@
-// Rust guideline compliant 2026-02-21
 //! Error types for kubeconfig operations.
 
 /// Errors that can occur during kubeconfig parsing and loading.

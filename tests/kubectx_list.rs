@@ -1,4 +1,3 @@
-// Rust guideline compliant 2026-02-21
 //! Integration tests for context listing and natural sort order.
 
 #[allow(dead_code)]
@@ -8,7 +7,7 @@ use std::io::Write;
 use std::path::PathBuf;
 
 use common::fixture;
-use khop::context::list::{list_contexts, ContextListItem};
+use khop::context::list::{ContextListItem, list_contexts};
 use khop::kubeconfig::KubeConfigView;
 
 // -- Listing from a simple fixture ------------------------------------------

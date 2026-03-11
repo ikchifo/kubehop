@@ -1,4 +1,3 @@
-// Rust guideline compliant 2026-02-21
 //! Integration tests for context switching and state file persistence.
 
 #[allow(dead_code)]
@@ -386,18 +385,21 @@ fn multiple_switches_preserve_all_fields() {
     let raw = fs::read_to_string(f.path()).unwrap();
     let doc: serde_yaml::Value = serde_yaml::from_str(&raw).unwrap();
 
-    assert!(doc
-        .get("clusters")
-        .and_then(serde_yaml::Value::as_sequence)
-        .is_some());
-    assert!(doc
-        .get("users")
-        .and_then(serde_yaml::Value::as_sequence)
-        .is_some());
-    assert!(doc
-        .get("contexts")
-        .and_then(serde_yaml::Value::as_sequence)
-        .is_some());
+    assert!(
+        doc.get("clusters")
+            .and_then(serde_yaml::Value::as_sequence)
+            .is_some()
+    );
+    assert!(
+        doc.get("users")
+            .and_then(serde_yaml::Value::as_sequence)
+            .is_some()
+    );
+    assert!(
+        doc.get("contexts")
+            .and_then(serde_yaml::Value::as_sequence)
+            .is_some()
+    );
     assert_eq!(
         doc.get("current-context")
             .and_then(serde_yaml::Value::as_str),

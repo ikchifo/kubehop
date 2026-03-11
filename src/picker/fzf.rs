@@ -1,4 +1,3 @@
-// Rust guideline compliant 2026-02-21
 //! External fzf fallback picker.
 //!
 //! Pipes the context list directly to fzf's stdin and reads the

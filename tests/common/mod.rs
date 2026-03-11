@@ -1,4 +1,3 @@
-// Rust guideline compliant 2026-02-21
 //! Shared test helpers for integration tests.
 
 use std::fs;

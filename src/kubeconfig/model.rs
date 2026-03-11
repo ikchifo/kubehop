@@ -1,4 +1,3 @@
-// Rust guideline compliant 2026-02-21
 //! Selective deserialization structs for kubeconfig files.
 
 use serde::Deserialize;

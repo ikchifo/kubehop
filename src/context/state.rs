@@ -1,4 +1,3 @@
-// Rust guideline compliant 2026-02-21
 //! Previous-context state file persistence.
 
 use std::fs;

@@ -1,10 +1,9 @@
-// Rust guideline compliant 2026-02-21
 //! Current namespace resolution.
 
 use crate::kubeconfig::KubeConfigView;
 
-use super::error::NamespaceError;
 use super::DEFAULT_NAMESPACE;
+use super::error::NamespaceError;
 
 /// Resolve the active namespace for the current context.
 ///

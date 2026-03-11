@@ -1,4 +1,3 @@
-// Rust guideline compliant 2026-02-21
 //! Kubeconfig file parsing and loading.
 
 pub mod error;
