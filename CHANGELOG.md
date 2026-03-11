@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1](https://github.com/ikchifo/kubehop/compare/v0.2.0...v0.2.1) - 2026-03-11
+
+### Added
+
+- add picker navigation, colored list output, and --raw flag
+
+### Fixed
+
+- improve terminal resize handling in picker
+- handle Ctrl+C and Ctrl+Z in the interactive picker
+
 ## [0.2.0](https://github.com/ikchifo/kubehop/compare/v0.1.0...v0.2.0) - 2026-03-11
 
 ### Added
