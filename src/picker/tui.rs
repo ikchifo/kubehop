@@ -5,9 +5,9 @@
 
 use std::io::{Stderr, stderr};
 
-use crossterm::cursor::SetCursorStyle;
+use crossterm::cursor::{MoveTo, SetCursorStyle};
 use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
-use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
+use crossterm::terminal::{Clear, ClearType as CtClearType, disable_raw_mode, enable_raw_mode};
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Layout};
 use ratatui::style::{Color, Modifier, Style};
@@ -66,9 +66,18 @@ impl TerminalGuard {
 
 impl Drop for TerminalGuard {
     fn drop(&mut self) {
-        let _ = crossterm::execute!(stderr(), SetCursorStyle::DefaultUserShape);
+        // Move cursor to the viewport origin and clear downward. We avoid
+        // `terminal.clear()` because it restores the cursor to its pre-clear
+        // position (the bottom input line), leaving a blank gap above the
+        // shell prompt.
+        let y = self.terminal.get_frame().area().y;
+        let _ = crossterm::execute!(
+            stderr(),
+            MoveTo(0, y),
+            Clear(CtClearType::FromCursorDown),
+            SetCursorStyle::DefaultUserShape,
+        );
         let _ = disable_raw_mode();
-        let _ = self.terminal.clear();
     }
 }
 
@@ -229,9 +238,14 @@ fn run_picker_loop(
 /// On resume, raw mode and cursor style are re-established so the picker
 /// can continue where it left off.
 fn suspend(terminal: &mut Terminal<CrosstermBackend<Stderr>>) -> anyhow::Result<()> {
-    let _ = crossterm::execute!(stderr(), SetCursorStyle::DefaultUserShape);
+    let y = terminal.get_frame().area().y;
+    crossterm::execute!(
+        stderr(),
+        MoveTo(0, y),
+        Clear(CtClearType::FromCursorDown),
+        SetCursorStyle::DefaultUserShape,
+    )?;
     disable_raw_mode()?;
-    let _ = terminal.clear();
 
     #[cfg(unix)]
     {
