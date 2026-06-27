@@ -12,7 +12,7 @@ document covers the basics.
 
 ## Prerequisites
 
-- Rust stable (edition 2021 or later)
+- Rust 1.88 or later
 - `cargo`, `clippy`, and `rustfmt` (included with rustup)
 
 ## Building and testing

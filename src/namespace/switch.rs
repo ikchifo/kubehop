@@ -1,12 +1,13 @@
 //! Namespace switching via full `serde_yaml::Value` round-trip.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde_yaml::Value;
 
 use super::DEFAULT_NAMESPACE;
 use super::error::NamespaceError;
-use crate::context::yaml_helpers::{load_yaml_doc, read_current_context, write_yaml_doc};
+use crate::context::yaml_helpers::{load_yaml_doc, write_yaml_doc};
+use crate::kubeconfig::load::MergedKubeConfig;
 
 /// Outcome of a namespace switch operation.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -38,17 +39,42 @@ pub struct NsUnsetResult {
 /// # Errors
 ///
 /// - [`NamespaceError::NoCurrentContext`] if no current context is set.
+/// - [`NamespaceError::ContextNotFound`] if the current context has no entry.
 /// - [`NamespaceError::Kubeconfig`] for I/O or YAML failures.
 pub fn switch_namespace(
     path: impl AsRef<Path>,
     namespace: &str,
 ) -> Result<NsSwitchResult, NamespaceError> {
-    let path = path.as_ref();
+    switch_namespace_merged(&[path.as_ref().to_path_buf()], namespace)
+}
+
+/// Switch the namespace for the active context in a merged kubeconfig list.
+///
+/// The context stanza is updated in the file that contributes the winning
+/// merged context, even when `current-context` is defined in another file.
+///
+/// # Errors
+///
+/// - [`NamespaceError::NoCurrentContext`] if no current context is set.
+/// - [`NamespaceError::ContextNotFound`] if the current context has no entry.
+/// - [`NamespaceError::Kubeconfig`] for I/O or YAML failures.
+pub fn switch_namespace_merged(
+    paths: &[PathBuf],
+    namespace: &str,
+) -> Result<NsSwitchResult, NamespaceError> {
+    let merged = MergedKubeConfig::load(paths)?;
+    let ctx_name = merged
+        .view()
+        .current_context()
+        .ok_or(NamespaceError::NoCurrentContext)?
+        .to_owned();
+    let path = merged
+        .context_source(&ctx_name)
+        .ok_or_else(|| NamespaceError::ContextNotFound(ctx_name.clone()))?;
     let mut doc = load_yaml_doc(path).map_err(NamespaceError::from_context_err)?;
 
-    let ctx_name = read_current_context(&doc).ok_or(NamespaceError::NoCurrentContext)?;
-
-    let previous = read_namespace_of_context(&doc, &ctx_name);
+    let previous = read_namespace_of_context(&doc, &ctx_name)
+        .ok_or_else(|| NamespaceError::ContextNotFound(ctx_name.clone()))?;
     set_namespace_in_context(&mut doc, &ctx_name, namespace);
 
     write_yaml_doc(path, &doc).map_err(NamespaceError::from_context_err)?;
@@ -67,17 +93,24 @@ pub fn switch_namespace(
 /// - [`NamespaceError::NoCurrentContext`] if no current context is set.
 /// - [`NamespaceError::Kubeconfig`] for I/O or YAML failures.
 pub fn unset_namespace(path: impl AsRef<Path>) -> Result<NsUnsetResult, NamespaceError> {
-    let result = switch_namespace(path, DEFAULT_NAMESPACE)?;
+    unset_namespace_merged(&[path.as_ref().to_path_buf()])
+}
+
+/// Reset the active context's namespace across a merged kubeconfig list.
+///
+/// # Errors
+///
+/// Returns the same errors as [`switch_namespace_merged`].
+pub fn unset_namespace_merged(paths: &[PathBuf]) -> Result<NsUnsetResult, NamespaceError> {
+    let result = switch_namespace_merged(paths, DEFAULT_NAMESPACE)?;
     Ok(NsUnsetResult {
         context: result.context,
         previous: result.previous,
     })
 }
 
-fn read_namespace_of_context(doc: &Value, context_name: &str) -> String {
-    let Some(contexts) = doc.get("contexts").and_then(Value::as_sequence) else {
-        return DEFAULT_NAMESPACE.to_owned();
-    };
+fn read_namespace_of_context(doc: &Value, context_name: &str) -> Option<String> {
+    let contexts = doc.get("contexts").and_then(Value::as_sequence)?;
 
     for entry in contexts {
         let matches = entry
@@ -86,16 +119,18 @@ fn read_namespace_of_context(doc: &Value, context_name: &str) -> String {
             .is_some_and(|n| n == context_name);
 
         if matches {
-            return entry
-                .get("context")
-                .and_then(|c| c.get("namespace"))
-                .and_then(Value::as_str)
-                .unwrap_or(DEFAULT_NAMESPACE)
-                .to_owned();
+            return Some(
+                entry
+                    .get("context")
+                    .and_then(|c| c.get("namespace"))
+                    .and_then(Value::as_str)
+                    .unwrap_or(DEFAULT_NAMESPACE)
+                    .to_owned(),
+            );
         }
     }
 
-    DEFAULT_NAMESPACE.to_owned()
+    None
 }
 
 fn set_namespace_in_context(doc: &mut Value, context_name: &str, namespace: &str) {
@@ -110,13 +145,13 @@ fn set_namespace_in_context(doc: &mut Value, context_name: &str, namespace: &str
             .is_some_and(|n| n == context_name);
 
         if matches {
-            if entry.get("context").is_none() {
-                if let Value::Mapping(map) = entry {
-                    map.insert(
-                        Value::String("context".to_owned()),
-                        Value::Mapping(serde_yaml::Mapping::new()),
-                    );
-                }
+            if entry.get("context").is_none()
+                && let Value::Mapping(map) = entry
+            {
+                map.insert(
+                    Value::String("context".to_owned()),
+                    Value::Mapping(serde_yaml::Mapping::new()),
+                );
             }
 
             if let Some(Value::Mapping(ctx_map)) = entry.get_mut("context") {
@@ -258,6 +293,68 @@ contexts:
         let f = write_temp_kubeconfig(KUBECONFIG_NO_CURRENT);
         let err = unset_namespace(f.path()).unwrap_err();
         assert!(matches!(err, NamespaceError::NoCurrentContext));
+    }
+
+    #[test]
+    fn switch_rejects_current_context_missing_from_contexts() {
+        let content = "\
+apiVersion: v1
+kind: Config
+current-context: missing
+contexts:
+  - name: dev
+    context:
+      cluster: dev-cluster
+";
+        let f = write_temp_kubeconfig(content);
+
+        let err = switch_namespace(f.path(), "monitoring").unwrap_err();
+
+        assert_eq!(
+            err.to_string(),
+            "current context \"missing\" not found in kubeconfig"
+        );
+        assert_eq!(fs::read_to_string(f.path()).unwrap(), content);
+    }
+
+    #[test]
+    fn switch_across_kubeconfig_files_updates_context_owner() {
+        let dir = tempfile::tempdir().unwrap();
+        let first = dir.path().join("first.yaml");
+        let second = dir.path().join("second.yaml");
+        fs::write(
+            &first,
+            "\
+current-context: ctx-b
+contexts:
+  - name: ctx-a
+    context:
+      namespace: default
+",
+        )
+        .unwrap();
+        fs::write(
+            &second,
+            "\
+contexts:
+  - name: ctx-b
+    context:
+      namespace: staging
+",
+        )
+        .unwrap();
+
+        let result =
+            switch_namespace_merged(&[first.clone(), second.clone()], "production").unwrap();
+
+        assert_eq!(result.context, "ctx-b");
+        assert_eq!(result.previous, "staging");
+        let second_doc = load_yaml_doc(&second).unwrap();
+        assert_eq!(
+            second_doc["contexts"][0]["context"]["namespace"].as_str(),
+            Some("production")
+        );
+        assert!(!fs::read_to_string(&first).unwrap().contains("production"));
     }
 
     #[test]

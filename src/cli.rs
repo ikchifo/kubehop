@@ -1,6 +1,6 @@
 //! CLI argument parsing and application-level orchestration.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use anyhow::{Context as _, bail};
 use crossterm::style::Stylize;
@@ -434,11 +434,36 @@ fn load_merged_or_empty(config: &Config) -> anyhow::Result<Option<KubeConfigView
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+struct StdioTerminals {
+    stdin: bool,
+    stdout: bool,
+    stderr: bool,
+}
+
+impl StdioTerminals {
+    fn detect() -> Self {
+        Self {
+            stdin: std::io::IsTerminal::is_terminal(&std::io::stdin()),
+            stdout: std::io::IsTerminal::is_terminal(&std::io::stdout()),
+            stderr: std::io::IsTerminal::is_terminal(&std::io::stderr()),
+        }
+    }
+}
+
+const fn should_use_inline_picker(
+    terminals: StdioTerminals,
+    ignore_fzf: bool,
+    isolated_shell: bool,
+) -> bool {
+    terminals.stdin && terminals.stdout && terminals.stderr && !ignore_fzf && !isolated_shell
+}
+
 fn cmd_list_or_interactive(config: &Config) -> anyhow::Result<()> {
-    let is_tty = std::io::IsTerminal::is_terminal(&std::io::stdout());
+    let terminals = StdioTerminals::detect();
     let ignore_fzf = std::env::var_os("KUBECTX_IGNORE_FZF").is_some();
 
-    if is_tty && !ignore_fzf && !config.isolated_shell {
+    if should_use_inline_picker(terminals, ignore_fzf, config.isolated_shell) {
         return cmd_interactive(config, false);
     }
 
@@ -447,7 +472,7 @@ fn cmd_list_or_interactive(config: &Config) -> anyhow::Result<()> {
     };
 
     let items = list::list_contexts(&view).context("failed to list contexts")?;
-    let use_color = config.force_color || (is_tty && !config.no_color);
+    let use_color = config.force_color || (terminals.stdout && !config.no_color);
 
     for item in &items {
         print_list_item(&item.name, item.is_current, use_color);
@@ -513,9 +538,7 @@ fn cmd_current(config: &Config) -> anyhow::Result<()> {
 }
 
 fn cmd_switch(config: &Config, target: &str) -> anyhow::Result<()> {
-    let write_path = primary_kubeconfig(config)?;
-
-    let result = switch::switch_context(write_path, target)
+    let result = switch::switch_context_merged(&config.kubeconfig_paths, target)
         .with_context(|| format!("failed to switch to context {target:?}"))?;
 
     if let Some(ref prev) = result.previous {
@@ -548,14 +571,12 @@ fn cmd_swap_previous(config: &Config) -> anyhow::Result<()> {
 }
 
 fn cmd_delete(config: &Config, targets: &[String]) -> anyhow::Result<()> {
-    let write_path = primary_kubeconfig(config)?;
-
     for target in targets {
         let result = if target == "." {
-            mutate::delete_current_context(write_path)
+            mutate::delete_current_context_merged(&config.kubeconfig_paths)
                 .context("failed to delete current context")?
         } else {
-            mutate::delete_context(write_path, target)
+            mutate::delete_context_merged(&config.kubeconfig_paths, target)
                 .with_context(|| format!("failed to delete context {target:?}"))?
         };
 
@@ -572,8 +593,6 @@ fn cmd_delete(config: &Config, targets: &[String]) -> anyhow::Result<()> {
 }
 
 fn cmd_rename(config: &Config, old: &str, new_name: &str) -> anyhow::Result<()> {
-    let write_path = primary_kubeconfig(config)?;
-
     let resolved_old;
     let old = if old == "." {
         let view = load_merged_view(config)?;
@@ -586,7 +605,7 @@ fn cmd_rename(config: &Config, old: &str, new_name: &str) -> anyhow::Result<()> 
         old
     };
 
-    let result = mutate::rename_context(write_path, old, new_name)
+    let result = mutate::rename_context_merged(&config.kubeconfig_paths, old, new_name)
         .with_context(|| format!("failed to rename context {old:?} to {new_name:?}"))?;
 
     eprintln!(
@@ -597,8 +616,8 @@ fn cmd_rename(config: &Config, old: &str, new_name: &str) -> anyhow::Result<()> 
 }
 
 fn cmd_unset(config: &Config) -> anyhow::Result<()> {
-    let write_path = primary_kubeconfig(config)?;
-    let result = mutate::unset_context(write_path).context("failed to unset current context")?;
+    let result = mutate::unset_context_merged(&config.kubeconfig_paths)
+        .context("failed to unset current context")?;
 
     match result.previous {
         Some(prev) => eprintln!("Active context unset (was \"{prev}\")."),
@@ -633,15 +652,14 @@ fn ns_cmd_current(config: &Config) -> anyhow::Result<()> {
 }
 
 fn ns_cmd_switch(config: &Config, target: &str, force: bool) -> anyhow::Result<()> {
-    let write_path = primary_kubeconfig(config)?;
-
     if !force {
-        crate::namespace::list::namespace_exists(write_path, target)
+        crate::namespace::list::namespace_exists_merged(&config.kubeconfig_paths, target)
             .with_context(|| format!("failed to verify namespace {target:?}"))?;
     }
 
-    let result = crate::namespace::switch::switch_namespace(write_path, target)
-        .with_context(|| format!("failed to switch to namespace {target:?}"))?;
+    let result =
+        crate::namespace::switch::switch_namespace_merged(&config.kubeconfig_paths, target)
+            .with_context(|| format!("failed to switch to namespace {target:?}"))?;
 
     let ns_state = NsStateFile::new(&config.cache_dir, &result.context);
     if let Err(e) = ns_state.save(&result.previous) {
@@ -661,8 +679,7 @@ fn ns_cmd_switch(config: &Config, target: &str, force: bool) -> anyhow::Result<(
 }
 
 fn ns_cmd_swap_previous(config: &Config) -> anyhow::Result<()> {
-    let write_path = primary_kubeconfig(config)?;
-    let view = KubeConfigView::load(write_path).context("failed to load kubeconfig")?;
+    let view = load_merged_view(config)?;
     let ctx_name = view
         .current_context()
         .ok_or_else(|| anyhow::anyhow!("no current context set"))?;
@@ -677,29 +694,27 @@ fn ns_cmd_swap_previous(config: &Config) -> anyhow::Result<()> {
 }
 
 fn ns_cmd_unset(config: &Config) -> anyhow::Result<()> {
-    let write_path = primary_kubeconfig(config)?;
-    let result = crate::namespace::switch::unset_namespace(write_path)
+    let result = crate::namespace::switch::unset_namespace_merged(&config.kubeconfig_paths)
         .context("failed to unset namespace")?;
     eprintln!("Active namespace unset (was \"{}\").", result.previous);
     Ok(())
 }
 
 fn ns_cmd_list_or_interactive(config: &Config) -> anyhow::Result<()> {
-    let is_tty = std::io::IsTerminal::is_terminal(&std::io::stdout());
+    let terminals = StdioTerminals::detect();
     let ignore_fzf = std::env::var_os("KUBECTX_IGNORE_FZF").is_some();
 
-    if is_tty && !ignore_fzf {
+    if should_use_inline_picker(terminals, ignore_fzf, config.isolated_shell) {
         return ns_cmd_interactive(config, false);
     }
 
     let view = load_merged_view(config)?;
     let current_ns = current_namespace(&view).unwrap_or_default();
 
-    let write_path = primary_kubeconfig(config)?;
-    let namespaces =
-        crate::namespace::list::list_namespaces(write_path).context("failed to list namespaces")?;
+    let namespaces = crate::namespace::list::list_namespaces_merged(&config.kubeconfig_paths)
+        .context("failed to list namespaces")?;
 
-    let use_color = config.force_color || (is_tty && !config.no_color);
+    let use_color = config.force_color || (terminals.stdout && !config.no_color);
 
     for ns in &namespaces {
         print_list_item(ns, ns == &current_ns, use_color);
@@ -709,9 +724,8 @@ fn ns_cmd_list_or_interactive(config: &Config) -> anyhow::Result<()> {
 }
 
 fn ns_cmd_list_raw(config: &Config) -> anyhow::Result<()> {
-    let write_path = primary_kubeconfig(config)?;
-    let namespaces =
-        crate::namespace::list::list_namespaces(write_path).context("failed to list namespaces")?;
+    let namespaces = crate::namespace::list::list_namespaces_merged(&config.kubeconfig_paths)
+        .context("failed to list namespaces")?;
 
     for ns in &namespaces {
         println!("{ns}");
@@ -724,9 +738,8 @@ fn ns_cmd_interactive(config: &Config, use_fzf: bool) -> anyhow::Result<()> {
     let view = load_merged_view(config)?;
     let current_ns = current_namespace(&view).unwrap_or_default();
 
-    let write_path = primary_kubeconfig(config)?;
-    let namespaces =
-        crate::namespace::list::list_namespaces(write_path).context("failed to list namespaces")?;
+    let namespaces = crate::namespace::list::list_namespaces_merged(&config.kubeconfig_paths)
+        .context("failed to list namespaces")?;
 
     let mut picker_items: Vec<PickerItem> = namespaces
         .iter()
@@ -754,15 +767,6 @@ fn ns_cmd_interactive(config: &Config, use_fzf: bool) -> anyhow::Result<()> {
     }
 }
 
-/// Return the first kubeconfig path, used for write operations.
-fn primary_kubeconfig(config: &Config) -> anyhow::Result<&Path> {
-    config
-        .kubeconfig_paths
-        .first()
-        .map(PathBuf::as_path)
-        .ok_or_else(|| anyhow::anyhow!("no kubeconfig paths configured"))
-}
-
 fn resolve_kubeconfig_paths() -> Vec<PathBuf> {
     if let Ok(val) = std::env::var("KUBECONFIG") {
         std::env::split_paths(&val)
@@ -787,6 +791,44 @@ fn resolve_cache_dir() -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn default_picker_requires_all_standard_streams_to_be_terminals() {
+        let all_terminals = StdioTerminals {
+            stdin: true,
+            stdout: true,
+            stderr: true,
+        };
+        assert!(should_use_inline_picker(all_terminals, false, false));
+
+        for terminals in [
+            StdioTerminals {
+                stdin: false,
+                ..all_terminals
+            },
+            StdioTerminals {
+                stdout: false,
+                ..all_terminals
+            },
+            StdioTerminals {
+                stderr: false,
+                ..all_terminals
+            },
+        ] {
+            assert!(!should_use_inline_picker(terminals, false, false));
+        }
+    }
+
+    #[test]
+    fn default_picker_honors_non_interactive_opt_outs() {
+        let all_terminals = StdioTerminals {
+            stdin: true,
+            stdout: true,
+            stderr: true,
+        };
+        assert!(!should_use_inline_picker(all_terminals, true, false));
+        assert!(!should_use_inline_picker(all_terminals, false, true));
+    }
 
     fn args(input: &[&str]) -> Vec<String> {
         input.iter().map(|s| (*s).to_string()).collect()

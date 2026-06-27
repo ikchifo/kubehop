@@ -1,9 +1,75 @@
 //! Kubeconfig file loading with sans-I/O core.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use super::error::KubeconfigError;
 use super::model::KubeConfigView;
+
+#[derive(Debug, Clone)]
+pub(crate) struct MergedKubeConfig {
+    view: KubeConfigView,
+    context_sources: HashMap<String, PathBuf>,
+    current_context_source: Option<PathBuf>,
+    primary_path: Option<PathBuf>,
+}
+
+impl MergedKubeConfig {
+    pub(crate) fn load(paths: &[PathBuf]) -> Result<Self, KubeconfigError> {
+        let mut current_context = None;
+        let mut current_context_source = None;
+        let mut context_sources = HashMap::new();
+        let mut contexts = Vec::new();
+
+        for path in paths {
+            let view = KubeConfigView::load(path)?;
+
+            if current_context.is_none()
+                && let Some(name) = view.current_context
+            {
+                current_context = Some(name);
+                current_context_source = Some(path.clone());
+            }
+
+            for entry in view.contexts {
+                if !context_sources.contains_key(&entry.name) {
+                    context_sources.insert(entry.name.clone(), path.clone());
+                    contexts.push(entry);
+                }
+            }
+        }
+
+        Ok(Self {
+            view: KubeConfigView {
+                current_context,
+                contexts,
+            },
+            context_sources,
+            current_context_source,
+            primary_path: paths.first().cloned(),
+        })
+    }
+
+    pub(crate) const fn view(&self) -> &KubeConfigView {
+        &self.view
+    }
+
+    pub(crate) fn into_view(self) -> KubeConfigView {
+        self.view
+    }
+
+    pub(crate) fn context_source(&self, name: &str) -> Option<&Path> {
+        self.context_sources.get(name).map(PathBuf::as_path)
+    }
+
+    pub(crate) fn current_context_source(&self) -> Option<&Path> {
+        self.current_context_source.as_deref()
+    }
+
+    pub(crate) fn primary_path(&self) -> Option<&Path> {
+        self.primary_path.as_deref()
+    }
+}
 
 impl KubeConfigView {
     /// Parse a kubeconfig from any reader.
@@ -45,38 +111,6 @@ impl KubeConfigView {
     ///
     /// Returns an error if any individual file cannot be loaded.
     pub fn load_merged(paths: &[PathBuf]) -> Result<Self, KubeconfigError> {
-        if paths.is_empty() {
-            return Ok(Self {
-                current_context: None,
-                contexts: Vec::new(),
-            });
-        }
-
-        if paths.len() == 1 {
-            return Self::load(&paths[0]);
-        }
-
-        let mut current_context: Option<String> = None;
-        let mut seen_names = std::collections::HashSet::new();
-        let mut merged_contexts = Vec::new();
-
-        for path in paths {
-            let view = Self::load(path)?;
-
-            if current_context.is_none() {
-                current_context = view.current_context;
-            }
-
-            for entry in view.contexts {
-                if seen_names.insert(entry.name.clone()) {
-                    merged_contexts.push(entry);
-                }
-            }
-        }
-
-        Ok(Self {
-            current_context,
-            contexts: merged_contexts,
-        })
+        MergedKubeConfig::load(paths).map(MergedKubeConfig::into_view)
     }
 }

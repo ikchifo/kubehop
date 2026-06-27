@@ -3,9 +3,14 @@
 #[allow(dead_code)]
 mod common;
 
+use std::fs;
+
 use common::{reload_raw, temp_copy, write_temp};
 use khop::context::error::ContextError;
-use khop::context::mutate::{delete_context, rename_context, unset_context};
+use khop::context::mutate::{
+    delete_context, delete_context_merged, rename_context, rename_context_merged, unset_context,
+    unset_context_merged,
+};
 use khop::kubeconfig::KubeConfigView;
 
 fn context_names_from_value(doc: &serde_yaml::Value) -> Vec<String> {
@@ -35,6 +40,73 @@ fn rename_context_in_file() {
     let names = context_names_from_value(&reload_raw(&f));
     assert!(names.contains(&"qa".to_owned()));
     assert!(!names.contains(&"staging".to_owned()));
+}
+
+#[test]
+fn rename_across_kubeconfig_files_updates_stanza_and_current_owners() {
+    let dir = tempfile::tempdir().unwrap();
+    let first = dir.path().join("first.yaml");
+    let second = dir.path().join("second.yaml");
+    fs::write(
+        &first,
+        "\
+apiVersion: v1
+kind: Config
+current-context: ctx-b
+contexts:
+  - name: ctx-a
+    context:
+      cluster: cluster-a
+",
+    )
+    .unwrap();
+    fs::write(
+        &second,
+        "\
+apiVersion: v1
+kind: Config
+contexts:
+  - name: ctx-b
+    context:
+      cluster: cluster-b
+  - name: ctx-c
+    context:
+      cluster: cluster-c
+",
+    )
+    .unwrap();
+
+    let result =
+        rename_context_merged(&[first.clone(), second.clone()], "ctx-b", "renamed").unwrap();
+
+    assert_eq!(result.old_name, "ctx-b");
+    assert_eq!(result.new_name, "renamed");
+    assert_eq!(
+        KubeConfigView::load(&first).unwrap().current_context(),
+        Some("renamed")
+    );
+    assert_eq!(
+        KubeConfigView::load(&second).unwrap().context_names(),
+        vec!["renamed", "ctx-c"]
+    );
+}
+
+#[test]
+fn merged_rename_rejects_a_destination_from_another_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let first = dir.path().join("first.yaml");
+    let second = dir.path().join("second.yaml");
+    fs::write(&first, "contexts:\n  - name: ctx-a\n    context: {}\n").unwrap();
+    fs::write(&second, "contexts:\n  - name: ctx-b\n    context: {}\n").unwrap();
+
+    let err =
+        rename_context_merged(&[first.clone(), second.clone()], "ctx-b", "ctx-a").unwrap_err();
+
+    assert!(matches!(err, ContextError::AlreadyExists(ref name) if name == "ctx-a"));
+    assert_eq!(
+        KubeConfigView::load(&second).unwrap().context_names(),
+        vec!["ctx-b"]
+    );
 }
 
 #[test]
@@ -137,6 +209,46 @@ fn delete_removes_context_from_file() {
 }
 
 #[test]
+fn delete_across_kubeconfig_files_updates_stanza_and_current_owners() {
+    let dir = tempfile::tempdir().unwrap();
+    let first = dir.path().join("first.yaml");
+    let second = dir.path().join("second.yaml");
+    fs::write(
+        &first,
+        "\
+current-context: ctx-b
+contexts:
+  - name: ctx-a
+    context: {}
+",
+    )
+    .unwrap();
+    fs::write(
+        &second,
+        "\
+contexts:
+  - name: ctx-b
+    context: {}
+  - name: ctx-c
+    context: {}
+",
+    )
+    .unwrap();
+
+    let result = delete_context_merged(&[first.clone(), second.clone()], "ctx-b").unwrap();
+
+    assert!(result.was_current);
+    assert_eq!(
+        KubeConfigView::load(&first).unwrap().current_context(),
+        None
+    );
+    assert_eq!(
+        KubeConfigView::load(&second).unwrap().context_names(),
+        vec!["ctx-c"]
+    );
+}
+
+#[test]
 fn delete_current_context_removes_and_unsets() {
     let f = temp_copy("simple.yaml");
     let result = delete_context(f.path(), "dev").unwrap();
@@ -221,6 +333,36 @@ fn unset_clears_current_context_field() {
 }
 
 #[test]
+fn unset_across_kubeconfig_files_updates_current_context_owner() {
+    let dir = tempfile::tempdir().unwrap();
+    let first = dir.path().join("first.yaml");
+    let second = dir.path().join("second.yaml");
+    fs::write(&first, "contexts:\n  - name: ctx-a\n    context: {}\n").unwrap();
+    fs::write(
+        &second,
+        "\
+current-context: ctx-b
+contexts:
+  - name: ctx-b
+    context: {}
+",
+    )
+    .unwrap();
+
+    let result = unset_context_merged(&[first.clone(), second.clone()]).unwrap();
+
+    assert_eq!(result.previous.as_deref(), Some("ctx-b"));
+    assert_eq!(
+        KubeConfigView::load(&first).unwrap().current_context(),
+        None
+    );
+    assert_eq!(
+        KubeConfigView::load(&second).unwrap().current_context(),
+        None
+    );
+}
+
+#[test]
 fn unset_preserves_all_contexts() {
     let f = temp_copy("simple.yaml");
     let _ = unset_context(f.path()).unwrap();
@@ -248,7 +390,7 @@ fn unset_preserves_clusters_and_users() {
     assert_eq!(clusters.unwrap().len(), 3);
 
     let users = doc.get("users").and_then(serde_yaml::Value::as_sequence);
-    assert!(users.is_some(), "users field must survive unset round-trip",);
+    assert!(users.is_some(), "users field must survive unset round-trip");
 }
 
 #[test]

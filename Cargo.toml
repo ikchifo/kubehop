@@ -9,24 +9,21 @@ repository = "https://github.com/ikchifo/kubehop"
 keywords = ["kubernetes", "kubectl", "context", "kubectx"]
 categories = ["command-line-utilities"]
 readme = "README.md"
-rust-version = "1.86"
+rust-version = "1.88"
 exclude = [".github/", "docs/", "tests/", "deploy/"]
 
 [dependencies]
 anyhow = "1"
-clap = { version = "4", features = ["derive"] }
 crossterm = "0.29"
 directories = "6"
 mimalloc = "0.1"
 nucleo-matcher = "0.3"
-ratatui = "0.30"
+ratatui = "=0.30.2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_yaml = "0.9"
+tempfile = "3.26.0"
 thiserror = "2"
-
-[patch.crates-io]
-ratatui = { git = "https://github.com/ratatui/ratatui.git", rev = "848f46474220d3af47d928ec0b1d3b6906f54239" }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
@@ -35,7 +32,6 @@ libc = "0.2"
 opt-level = 3
 lto = "fat"
 codegen-units = 1
-panic = "abort"
 strip = true
 
 [profile.dev.package."*"]
@@ -70,7 +66,6 @@ undocumented_unsafe_blocks = "warn"
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
-tempfile = "3.26.0"
 
 [[bench]]
 name = "startup"

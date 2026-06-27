@@ -8,7 +8,7 @@ use std::fs;
 use common::{fixture, write_temp};
 use khop::context::error::ContextError;
 use khop::context::state::StateFile;
-use khop::context::switch::switch_context;
+use khop::context::switch::{switch_context, switch_context_merged};
 use khop::kubeconfig::{KubeConfigView, KubeconfigError};
 
 const FULL_KUBECONFIG: &str = "\
@@ -57,6 +57,93 @@ fn switch_updates_current_context_in_file() {
 
     let view = KubeConfigView::load(f.path()).unwrap();
     assert_eq!(view.current_context(), Some("staging"));
+}
+
+#[test]
+fn switch_across_kubeconfig_files_updates_current_context_owner() {
+    let dir = tempfile::tempdir().unwrap();
+    let first = dir.path().join("first.yaml");
+    let second = dir.path().join("second.yaml");
+    fs::write(
+        &first,
+        "\
+apiVersion: v1
+kind: Config
+current-context: ctx-a
+contexts:
+  - name: ctx-a
+    context:
+      cluster: cluster-a
+",
+    )
+    .unwrap();
+    fs::write(
+        &second,
+        "\
+apiVersion: v1
+kind: Config
+contexts:
+  - name: ctx-b
+    context:
+      cluster: cluster-b
+",
+    )
+    .unwrap();
+
+    let result = switch_context_merged(&[first.clone(), second.clone()], "ctx-b").unwrap();
+
+    assert_eq!(result.previous.as_deref(), Some("ctx-a"));
+    assert_eq!(
+        KubeConfigView::load(&first).unwrap().current_context(),
+        Some("ctx-b")
+    );
+    assert_eq!(
+        KubeConfigView::load(&second).unwrap().current_context(),
+        None
+    );
+}
+
+#[test]
+fn switch_uses_the_first_file_that_defines_current_context() {
+    let dir = tempfile::tempdir().unwrap();
+    let first = dir.path().join("first.yaml");
+    let second = dir.path().join("second.yaml");
+    fs::write(
+        &first,
+        "\
+apiVersion: v1
+kind: Config
+contexts:
+  - name: ctx-a
+    context:
+      cluster: cluster-a
+",
+    )
+    .unwrap();
+    fs::write(
+        &second,
+        "\
+apiVersion: v1
+kind: Config
+current-context: ctx-b
+contexts:
+  - name: ctx-b
+    context:
+      cluster: cluster-b
+",
+    )
+    .unwrap();
+
+    switch_context_merged(&[first.clone(), second.clone()], "ctx-a").unwrap();
+
+    assert_eq!(
+        KubeConfigView::load(&first).unwrap().current_context(),
+        None
+    );
+    assert_eq!(
+        KubeConfigView::load(&second).unwrap().current_context(),
+        Some("ctx-a")
+    );
 }
 
 #[test]

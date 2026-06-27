@@ -14,6 +14,10 @@ pub enum ContextError {
     #[error("context {0:?} not found")]
     NotFound(String),
 
+    /// The requested destination context name already exists.
+    #[error("context {0:?} already exists")]
+    AlreadyExists(String),
+
     /// An underlying kubeconfig operation failed.
     #[error(transparent)]
     Kubeconfig(#[from] KubeconfigError),

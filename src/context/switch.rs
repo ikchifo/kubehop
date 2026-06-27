@@ -1,12 +1,10 @@
 //! Context switching via full `serde_yaml::Value` round-trip.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use super::error::ContextError;
-use super::yaml_helpers::{
-    load_yaml_doc, read_current_context, set_current_context, validate_target_exists,
-    write_yaml_doc,
-};
+use super::yaml_helpers::{load_yaml_doc, set_current_context, write_yaml_doc};
+use crate::kubeconfig::load::MergedKubeConfig;
 
 /// Outcome of a context switch operation.
 ///
@@ -33,13 +31,36 @@ pub struct SwitchResult {
 ///   in the `contexts` array.
 /// - [`ContextError::Kubeconfig`] for I/O or YAML parsing failures.
 pub fn switch_context(path: impl AsRef<Path>, target: &str) -> Result<SwitchResult, ContextError> {
-    let path = path.as_ref();
+    switch_context_merged(&[path.as_ref().to_path_buf()], target)
+}
+
+/// Switch the active context across a merged kubeconfig path list.
+///
+/// The target context is resolved from the merged view. The
+/// `current-context` field is updated in the first file that defines it,
+/// matching kubectl's multi-file write rules. If no file defines the field,
+/// it is created in the first kubeconfig file.
+///
+/// # Errors
+///
+/// - [`ContextError::NotFound`] if `target` is absent from the merged view.
+/// - [`ContextError::Kubeconfig`] for I/O or YAML parsing failures.
+pub fn switch_context_merged(
+    paths: &[PathBuf],
+    target: &str,
+) -> Result<SwitchResult, ContextError> {
+    let merged = MergedKubeConfig::load(paths)?;
+    if merged.context_source(target).is_none() {
+        return Err(ContextError::NotFound(target.to_owned()));
+    }
+
+    let path = merged
+        .current_context_source()
+        .or_else(|| merged.primary_path())
+        .ok_or(ContextError::NoContexts)?;
 
     let mut doc = load_yaml_doc(path)?;
-
-    validate_target_exists(&doc, target)?;
-
-    let previous = read_current_context(&doc);
+    let previous = merged.view().current_context.clone();
 
     set_current_context(&mut doc, target);
 

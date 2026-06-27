@@ -11,6 +11,10 @@ pub enum NamespaceError {
     #[error("no current context set")]
     NoCurrentContext,
 
+    /// The configured current context has no matching context entry.
+    #[error("current context {0:?} not found in kubeconfig")]
+    ContextNotFound(String),
+
     /// The requested namespace does not exist on the cluster.
     #[error("namespace {0:?} not found on cluster")]
     NotFound(String),
@@ -22,6 +26,10 @@ pub enum NamespaceError {
     /// kubectl binary was not found in PATH.
     #[error("kubectl not found in PATH")]
     KubectlNotFound,
+
+    /// The kubeconfig paths could not be represented as `KUBECONFIG`.
+    #[error("invalid KUBECONFIG path list: {0}")]
+    InvalidKubeconfigPaths(String),
 
     /// An underlying kubeconfig operation failed.
     #[error(transparent)]
