@@ -434,11 +434,36 @@ fn load_merged_or_empty(config: &Config) -> anyhow::Result<Option<KubeConfigView
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+struct StdioTerminals {
+    stdin: bool,
+    stdout: bool,
+    stderr: bool,
+}
+
+impl StdioTerminals {
+    fn detect() -> Self {
+        Self {
+            stdin: std::io::IsTerminal::is_terminal(&std::io::stdin()),
+            stdout: std::io::IsTerminal::is_terminal(&std::io::stdout()),
+            stderr: std::io::IsTerminal::is_terminal(&std::io::stderr()),
+        }
+    }
+}
+
+const fn should_use_inline_picker(
+    terminals: StdioTerminals,
+    ignore_fzf: bool,
+    isolated_shell: bool,
+) -> bool {
+    terminals.stdin && terminals.stdout && terminals.stderr && !ignore_fzf && !isolated_shell
+}
+
 fn cmd_list_or_interactive(config: &Config) -> anyhow::Result<()> {
-    let is_tty = std::io::IsTerminal::is_terminal(&std::io::stdout());
+    let terminals = StdioTerminals::detect();
     let ignore_fzf = std::env::var_os("KUBECTX_IGNORE_FZF").is_some();
 
-    if is_tty && !ignore_fzf && !config.isolated_shell {
+    if should_use_inline_picker(terminals, ignore_fzf, config.isolated_shell) {
         return cmd_interactive(config, false);
     }
 
@@ -447,7 +472,7 @@ fn cmd_list_or_interactive(config: &Config) -> anyhow::Result<()> {
     };
 
     let items = list::list_contexts(&view).context("failed to list contexts")?;
-    let use_color = config.force_color || (is_tty && !config.no_color);
+    let use_color = config.force_color || (terminals.stdout && !config.no_color);
 
     for item in &items {
         print_list_item(&item.name, item.is_current, use_color);
@@ -685,10 +710,10 @@ fn ns_cmd_unset(config: &Config) -> anyhow::Result<()> {
 }
 
 fn ns_cmd_list_or_interactive(config: &Config) -> anyhow::Result<()> {
-    let is_tty = std::io::IsTerminal::is_terminal(&std::io::stdout());
+    let terminals = StdioTerminals::detect();
     let ignore_fzf = std::env::var_os("KUBECTX_IGNORE_FZF").is_some();
 
-    if is_tty && !ignore_fzf {
+    if should_use_inline_picker(terminals, ignore_fzf, config.isolated_shell) {
         return ns_cmd_interactive(config, false);
     }
 
@@ -699,7 +724,7 @@ fn ns_cmd_list_or_interactive(config: &Config) -> anyhow::Result<()> {
     let namespaces =
         crate::namespace::list::list_namespaces(write_path).context("failed to list namespaces")?;
 
-    let use_color = config.force_color || (is_tty && !config.no_color);
+    let use_color = config.force_color || (terminals.stdout && !config.no_color);
 
     for ns in &namespaces {
         print_list_item(ns, ns == &current_ns, use_color);
@@ -787,6 +812,44 @@ fn resolve_cache_dir() -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn default_picker_requires_all_standard_streams_to_be_terminals() {
+        let all_terminals = StdioTerminals {
+            stdin: true,
+            stdout: true,
+            stderr: true,
+        };
+        assert!(should_use_inline_picker(all_terminals, false, false));
+
+        for terminals in [
+            StdioTerminals {
+                stdin: false,
+                ..all_terminals
+            },
+            StdioTerminals {
+                stdout: false,
+                ..all_terminals
+            },
+            StdioTerminals {
+                stderr: false,
+                ..all_terminals
+            },
+        ] {
+            assert!(!should_use_inline_picker(terminals, false, false));
+        }
+    }
+
+    #[test]
+    fn default_picker_honors_non_interactive_opt_outs() {
+        let all_terminals = StdioTerminals {
+            stdin: true,
+            stdout: true,
+            stderr: true,
+        };
+        assert!(!should_use_inline_picker(all_terminals, true, false));
+        assert!(!should_use_inline_picker(all_terminals, false, true));
+    }
 
     fn args(input: &[&str]) -> Vec<String> {
         input.iter().map(|s| (*s).to_string()).collect()

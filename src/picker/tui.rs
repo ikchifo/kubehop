@@ -51,19 +51,66 @@ struct TerminalGuard {
 
 impl TerminalGuard {
     fn new() -> anyhow::Result<Self> {
-        enable_raw_mode()?;
-        crossterm::execute!(stderr(), SetCursorStyle::BlinkingBlock)?;
-
-        let backend = CrosstermBackend::new(stderr());
-        let terminal = Terminal::with_options(
-            backend,
-            TerminalOptions {
-                viewport: Viewport::Inline(PICKER_HEIGHT),
+        let terminal = setup_with_rollback(
+            enable_raw_mode,
+            || crossterm::execute!(stderr(), SetCursorStyle::BlinkingBlock),
+            || {
+                let backend = CrosstermBackend::new(stderr());
+                Terminal::with_options(
+                    backend,
+                    TerminalOptions {
+                        viewport: Viewport::Inline(PICKER_HEIGHT),
+                    },
+                )
             },
+            rollback_terminal_setup,
         )?;
 
         Ok(Self { terminal })
     }
+}
+
+struct SetupRollback<F: FnOnce()> {
+    rollback: Option<F>,
+}
+
+impl<F: FnOnce()> SetupRollback<F> {
+    fn new(rollback: F) -> Self {
+        Self {
+            rollback: Some(rollback),
+        }
+    }
+
+    fn disarm(&mut self) {
+        self.rollback = None;
+    }
+}
+
+impl<F: FnOnce()> Drop for SetupRollback<F> {
+    fn drop(&mut self) {
+        if let Some(rollback) = self.rollback.take() {
+            rollback();
+        }
+    }
+}
+
+fn setup_with_rollback<T, E>(
+    enable_raw: impl FnOnce() -> Result<(), E>,
+    set_cursor: impl FnOnce() -> Result<(), E>,
+    create_terminal: impl FnOnce() -> Result<T, E>,
+    rollback: impl FnOnce(),
+) -> Result<T, E> {
+    enable_raw()?;
+    let mut setup_rollback = SetupRollback::new(rollback);
+    set_cursor()?;
+    let terminal = create_terminal()?;
+    setup_rollback.disarm();
+    Ok(terminal)
+}
+
+fn rollback_terminal_setup() {
+    let _ = crossterm::execute!(stderr(), SetCursorStyle::DefaultUserShape);
+    let _ = disable_raw_mode();
 }
 
 impl Drop for TerminalGuard {
@@ -501,5 +548,53 @@ mod tests {
         state.query = "missing".to_owned();
         state.update_scores(&items);
         assert_eq!(state.list_state.selected(), None);
+    }
+
+    #[test]
+    fn terminal_setup_rolls_back_when_cursor_setup_fails() {
+        let events = std::cell::RefCell::new(Vec::new());
+
+        let result: Result<(), &str> = setup_with_rollback(
+            || {
+                events.borrow_mut().push("raw");
+                Ok(())
+            },
+            || {
+                events.borrow_mut().push("cursor");
+                Err("cursor failed")
+            },
+            || {
+                events.borrow_mut().push("terminal");
+                Ok(())
+            },
+            || events.borrow_mut().push("rollback"),
+        );
+
+        assert_eq!(result, Err("cursor failed"));
+        assert_eq!(*events.borrow(), ["raw", "cursor", "rollback"]);
+    }
+
+    #[test]
+    fn terminal_setup_rolls_back_when_terminal_creation_fails() {
+        let events = std::cell::RefCell::new(Vec::new());
+
+        let result: Result<(), &str> = setup_with_rollback(
+            || {
+                events.borrow_mut().push("raw");
+                Ok(())
+            },
+            || {
+                events.borrow_mut().push("cursor");
+                Ok(())
+            },
+            || {
+                events.borrow_mut().push("terminal");
+                Err("terminal failed")
+            },
+            || events.borrow_mut().push("rollback"),
+        );
+
+        assert_eq!(result, Err("terminal failed"));
+        assert_eq!(*events.borrow(), ["raw", "cursor", "terminal", "rollback"]);
     }
 }
