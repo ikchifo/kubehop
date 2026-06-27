@@ -1,6 +1,6 @@
 //! CLI argument parsing and application-level orchestration.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use anyhow::{Context as _, bail};
 use crossterm::style::Stylize;
@@ -652,15 +652,14 @@ fn ns_cmd_current(config: &Config) -> anyhow::Result<()> {
 }
 
 fn ns_cmd_switch(config: &Config, target: &str, force: bool) -> anyhow::Result<()> {
-    let write_path = primary_kubeconfig(config)?;
-
     if !force {
-        crate::namespace::list::namespace_exists(write_path, target)
+        crate::namespace::list::namespace_exists_merged(&config.kubeconfig_paths, target)
             .with_context(|| format!("failed to verify namespace {target:?}"))?;
     }
 
-    let result = crate::namespace::switch::switch_namespace(write_path, target)
-        .with_context(|| format!("failed to switch to namespace {target:?}"))?;
+    let result =
+        crate::namespace::switch::switch_namespace_merged(&config.kubeconfig_paths, target)
+            .with_context(|| format!("failed to switch to namespace {target:?}"))?;
 
     let ns_state = NsStateFile::new(&config.cache_dir, &result.context);
     if let Err(e) = ns_state.save(&result.previous) {
@@ -680,8 +679,7 @@ fn ns_cmd_switch(config: &Config, target: &str, force: bool) -> anyhow::Result<(
 }
 
 fn ns_cmd_swap_previous(config: &Config) -> anyhow::Result<()> {
-    let write_path = primary_kubeconfig(config)?;
-    let view = KubeConfigView::load(write_path).context("failed to load kubeconfig")?;
+    let view = load_merged_view(config)?;
     let ctx_name = view
         .current_context()
         .ok_or_else(|| anyhow::anyhow!("no current context set"))?;
@@ -696,8 +694,7 @@ fn ns_cmd_swap_previous(config: &Config) -> anyhow::Result<()> {
 }
 
 fn ns_cmd_unset(config: &Config) -> anyhow::Result<()> {
-    let write_path = primary_kubeconfig(config)?;
-    let result = crate::namespace::switch::unset_namespace(write_path)
+    let result = crate::namespace::switch::unset_namespace_merged(&config.kubeconfig_paths)
         .context("failed to unset namespace")?;
     eprintln!("Active namespace unset (was \"{}\").", result.previous);
     Ok(())
@@ -714,9 +711,8 @@ fn ns_cmd_list_or_interactive(config: &Config) -> anyhow::Result<()> {
     let view = load_merged_view(config)?;
     let current_ns = current_namespace(&view).unwrap_or_default();
 
-    let write_path = primary_kubeconfig(config)?;
-    let namespaces =
-        crate::namespace::list::list_namespaces(write_path).context("failed to list namespaces")?;
+    let namespaces = crate::namespace::list::list_namespaces_merged(&config.kubeconfig_paths)
+        .context("failed to list namespaces")?;
 
     let use_color = config.force_color || (terminals.stdout && !config.no_color);
 
@@ -728,9 +724,8 @@ fn ns_cmd_list_or_interactive(config: &Config) -> anyhow::Result<()> {
 }
 
 fn ns_cmd_list_raw(config: &Config) -> anyhow::Result<()> {
-    let write_path = primary_kubeconfig(config)?;
-    let namespaces =
-        crate::namespace::list::list_namespaces(write_path).context("failed to list namespaces")?;
+    let namespaces = crate::namespace::list::list_namespaces_merged(&config.kubeconfig_paths)
+        .context("failed to list namespaces")?;
 
     for ns in &namespaces {
         println!("{ns}");
@@ -743,9 +738,8 @@ fn ns_cmd_interactive(config: &Config, use_fzf: bool) -> anyhow::Result<()> {
     let view = load_merged_view(config)?;
     let current_ns = current_namespace(&view).unwrap_or_default();
 
-    let write_path = primary_kubeconfig(config)?;
-    let namespaces =
-        crate::namespace::list::list_namespaces(write_path).context("failed to list namespaces")?;
+    let namespaces = crate::namespace::list::list_namespaces_merged(&config.kubeconfig_paths)
+        .context("failed to list namespaces")?;
 
     let mut picker_items: Vec<PickerItem> = namespaces
         .iter()
@@ -771,15 +765,6 @@ fn ns_cmd_interactive(config: &Config, use_fzf: bool) -> anyhow::Result<()> {
         PickerResult::Selected(name) => ns_cmd_switch(config, &name, true),
         PickerResult::Cancelled => Ok(()),
     }
-}
-
-/// Return the first kubeconfig path, used for write operations.
-fn primary_kubeconfig(config: &Config) -> anyhow::Result<&Path> {
-    config
-        .kubeconfig_paths
-        .first()
-        .map(PathBuf::as_path)
-        .ok_or_else(|| anyhow::anyhow!("no kubeconfig paths configured"))
 }
 
 fn resolve_kubeconfig_paths() -> Vec<PathBuf> {

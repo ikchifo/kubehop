@@ -91,13 +91,6 @@ pub(super) fn context_exists(doc: &Value, target: &str) -> bool {
         })
 }
 
-/// Extract the `current-context` value from the document.
-pub(crate) fn read_current_context(doc: &Value) -> Option<String> {
-    doc.get(KEY_CURRENT_CONTEXT)
-        .and_then(Value::as_str)
-        .map(String::from)
-}
-
 /// Set `current-context` to `target` in the document mapping.
 pub(super) fn set_current_context(doc: &mut Value, target: &str) {
     if let Value::Mapping(map) = doc {

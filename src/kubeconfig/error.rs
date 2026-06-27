@@ -25,11 +25,6 @@ pub enum KubeconfigError {
         #[source]
         source: std::io::Error,
     },
-
-    /// A write target could not be uniquely resolved across
-    /// multiple kubeconfig files.
-    #[error("context write target is ambiguous across multiple kubeconfig files")]
-    AmbiguousWrite,
 }
 
 impl KubeconfigError {

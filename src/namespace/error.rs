@@ -27,6 +27,10 @@ pub enum NamespaceError {
     #[error("kubectl not found in PATH")]
     KubectlNotFound,
 
+    /// The kubeconfig paths could not be represented as `KUBECONFIG`.
+    #[error("invalid KUBECONFIG path list: {0}")]
+    InvalidKubeconfigPaths(String),
+
     /// An underlying kubeconfig operation failed.
     #[error(transparent)]
     Kubeconfig(#[from] KubeconfigError),
