@@ -538,9 +538,7 @@ fn cmd_current(config: &Config) -> anyhow::Result<()> {
 }
 
 fn cmd_switch(config: &Config, target: &str) -> anyhow::Result<()> {
-    let write_path = primary_kubeconfig(config)?;
-
-    let result = switch::switch_context(write_path, target)
+    let result = switch::switch_context_merged(&config.kubeconfig_paths, target)
         .with_context(|| format!("failed to switch to context {target:?}"))?;
 
     if let Some(ref prev) = result.previous {
