@@ -9,7 +9,7 @@ use crossterm::cursor::{MoveTo, SetCursorStyle};
 use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 use crossterm::terminal::{Clear, ClearType as CtClearType, disable_raw_mode, enable_raw_mode};
 use ratatui::backend::CrosstermBackend;
-use ratatui::layout::{Constraint, Layout};
+use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{List, ListItem, ListState, Paragraph};
@@ -40,8 +40,18 @@ const PROMPT: &str = "> ";
 ///
 /// Returns an error if terminal setup, rendering, or event reading fails.
 pub fn pick_inline(items: &[PickerItem]) -> anyhow::Result<PickerResult> {
-    let mut guard = TerminalGuard::new()?;
+    let mut guard = TerminalGuard::new(picker_height(items))?;
     run_picker_loop(&mut guard.terminal, items)
+}
+
+fn picker_height(items: &[PickerItem]) -> u16 {
+    let list_rows = u16::try_from(items.len().max(1)).unwrap_or(u16::MAX);
+    let chrome_rows = 2 + u16::from(has_preview(items));
+    list_rows.saturating_add(chrome_rows).min(PICKER_HEIGHT)
+}
+
+fn has_preview(items: &[PickerItem]) -> bool {
+    items.iter().any(|item| item.meta.is_some())
 }
 
 /// RAII guard that restores terminal state on drop.
@@ -50,7 +60,7 @@ struct TerminalGuard {
 }
 
 impl TerminalGuard {
-    fn new() -> anyhow::Result<Self> {
+    fn new(viewport_height: u16) -> anyhow::Result<Self> {
         let terminal = setup_with_rollback(
             enable_raw_mode,
             || crossterm::execute!(stderr(), SetCursorStyle::BlinkingBlock),
@@ -59,7 +69,7 @@ impl TerminalGuard {
                 Terminal::with_options(
                     backend,
                     TerminalOptions {
-                        viewport: Viewport::Inline(PICKER_HEIGHT),
+                        viewport: Viewport::Inline(viewport_height),
                     },
                 )
             },
@@ -313,38 +323,38 @@ fn suspend(terminal: &mut Terminal<CrosstermBackend<Stderr>>) -> anyhow::Result<
 
 fn render(frame: &mut ratatui::Frame, items: &[PickerItem], state: &mut PickerState) {
     let area = frame.area();
-
-    let [list_area, preview_area, status_area, input_area] = Layout::vertical([
-        Constraint::Fill(1),
-        Constraint::Length(1),
-        Constraint::Length(1),
-        Constraint::Length(1),
-    ])
-    .areas(area);
+    let areas = picker_areas(area, has_preview(items));
 
     let highlight_style = Style::default()
         .fg(Color::Green)
         .add_modifier(Modifier::BOLD);
 
-    let list_items: Vec<ListItem> = state
-        .scored
-        .iter()
-        .map(|scored| {
-            let item = &items[scored.index];
-            let prefix = if item.is_current { "* " } else { "  " };
-            let name = &item.name;
+    let list_items: Vec<ListItem> = if state.scored.is_empty() {
+        vec![ListItem::new(Line::styled(
+            "  No matches",
+            Style::default().fg(Color::DarkGray),
+        ))]
+    } else {
+        state
+            .scored
+            .iter()
+            .map(|scored| {
+                let item = &items[scored.index];
+                let prefix = if item.is_current { "* " } else { "  " };
+                let name = &item.name;
 
-            let mut spans = vec![Span::raw(prefix)];
+                let mut spans = vec![Span::raw(prefix)];
 
-            if scored.indices.is_empty() {
-                spans.push(Span::raw(name.as_str()));
-            } else {
-                build_highlighted_spans(name, &scored.indices, highlight_style, &mut spans);
-            }
+                if scored.indices.is_empty() {
+                    spans.push(Span::raw(name.as_str()));
+                } else {
+                    build_highlighted_spans(name, &scored.indices, highlight_style, &mut spans);
+                }
 
-            ListItem::new(Line::from(spans))
-        })
-        .collect();
+                ListItem::new(Line::from(spans))
+            })
+            .collect()
+    };
 
     let match_count = state.scored.len();
     let total = items.len();
@@ -357,32 +367,73 @@ fn render(frame: &mut ratatui::Frame, items: &[PickerItem], state: &mut PickerSt
         )
         .highlight_symbol("\u{25b8} ");
 
-    state.visible_rows = usize::from(list_area.height);
-    frame.render_stateful_widget(list, list_area, &mut state.list_state);
+    state.visible_rows = usize::from(areas.list.height);
+    frame.render_stateful_widget(list, areas.list, &mut state.list_state);
 
-    render_preview(frame, preview_area, items, state);
-
-    let status_text = format!("  [{match_count}/{total}]");
-    let status = Paragraph::new(status_text).style(Style::default().fg(Color::DarkGray));
-    frame.render_widget(status, status_area);
-
-    let input_line = Line::from(format!("{PROMPT}{}", state.query));
-    let input_width = input_line.width();
-    let max_cursor_offset = usize::from(input_area.width.saturating_sub(1));
-    let horizontal_scroll = input_width.saturating_sub(max_cursor_offset);
-    let horizontal_scroll = u16::try_from(horizontal_scroll).unwrap_or(u16::MAX);
-    let input = Paragraph::new(input_line)
-        .style(Style::default().fg(Color::Yellow))
-        .scroll((0, horizontal_scroll));
-    frame.render_widget(input, input_area);
-
-    if input_area.width > 0 && input_area.height > 0 {
-        let cursor_offset = input_width
-            .saturating_sub(usize::from(horizontal_scroll))
-            .min(max_cursor_offset);
-        let cursor_offset = u16::try_from(cursor_offset).unwrap_or(input_area.width - 1);
-        frame.set_cursor_position((input_area.x + cursor_offset, input_area.y));
+    if let Some(preview) = areas.preview {
+        render_preview(frame, preview, items, state);
     }
+
+    if let Some(status_area) = areas.status {
+        let status_text = format!("  [{match_count}/{total}]  ↑/↓ move  enter select  esc cancel");
+        let status = Paragraph::new(status_text).style(Style::default().fg(Color::DarkGray));
+        frame.render_widget(status, status_area);
+    }
+
+    if let Some(input_area) = areas.input {
+        let input_line = Line::from(format!("{PROMPT}{}", state.query));
+        let input_width = input_line.width();
+        let max_cursor_offset = usize::from(input_area.width.saturating_sub(1));
+        let horizontal_scroll = input_width.saturating_sub(max_cursor_offset);
+        let horizontal_scroll = u16::try_from(horizontal_scroll).unwrap_or(u16::MAX);
+        let input = Paragraph::new(input_line)
+            .style(Style::default().fg(Color::Yellow))
+            .scroll((0, horizontal_scroll));
+        frame.render_widget(input, input_area);
+
+        if input_area.width > 0 {
+            let cursor_offset = input_width
+                .saturating_sub(usize::from(horizontal_scroll))
+                .min(max_cursor_offset);
+            let cursor_offset = u16::try_from(cursor_offset).unwrap_or(input_area.width - 1);
+            frame.set_cursor_position((input_area.x + cursor_offset, input_area.y));
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct PickerAreas {
+    list: Rect,
+    preview: Option<Rect>,
+    status: Option<Rect>,
+    input: Option<Rect>,
+}
+
+fn picker_areas(area: Rect, show_preview: bool) -> PickerAreas {
+    let mut list = area;
+    let input = take_bottom_row(&mut list);
+    let status = take_bottom_row(&mut list);
+    let preview = show_preview.then(|| take_bottom_row(&mut list)).flatten();
+    PickerAreas {
+        list,
+        preview,
+        status,
+        input,
+    }
+}
+
+fn take_bottom_row(area: &mut Rect) -> Option<Rect> {
+    if area.height <= 1 {
+        return None;
+    }
+
+    area.height -= 1;
+    Some(Rect::new(
+        area.x,
+        area.y.saturating_add(area.height),
+        area.width,
+        1,
+    ))
 }
 
 fn render_preview(
@@ -524,7 +575,10 @@ mod tests {
             row(&buffer, 5),
             "  ns=payments | cluster=prod-eu | user=operator"
         );
-        assert_eq!(row(&buffer, 6), "  [2/2]");
+        assert_eq!(
+            row(&buffer, 6),
+            "  [2/2]  ↑/↓ move  enter select  esc cancel"
+        );
         assert_eq!(row(&buffer, 7), ">");
     }
 
@@ -614,6 +668,78 @@ mod tests {
 
         assert_eq!(row(&buffer, 7), "pqrstuvwxyz");
         assert_eq!(cursor, Position::new(11, 7));
+    }
+
+    #[test]
+    fn picker_height_fits_content_and_caps_at_maximum() {
+        let namespaces = vec![
+            item("production", false, None),
+            item("staging", false, None),
+        ];
+        assert_eq!(picker_height(&namespaces), 4);
+
+        let contexts = vec![
+            item("production", false, Some(ContextFields::default())),
+            item("staging", false, Some(ContextFields::default())),
+        ];
+        assert_eq!(picker_height(&contexts), 5);
+
+        let many = (0..30)
+            .map(|index| item(&format!("context-{index}"), false, None))
+            .collect::<Vec<_>>();
+        assert_eq!(picker_height(&many), PICKER_HEIGHT);
+        assert_eq!(picker_height(&[]), 3);
+    }
+
+    #[test]
+    fn namespace_render_omits_blank_preview_row() {
+        let items = vec![
+            item("production", false, None),
+            item("staging", false, None),
+        ];
+        let mut state = PickerState::new(&items);
+
+        let (buffer, _) = render_at(60, 4, &items, &mut state);
+
+        assert!(row(&buffer, 0).contains("production"));
+        assert!(row(&buffer, 1).contains("staging"));
+        assert!(row(&buffer, 2).contains("[2/2]"));
+        assert_eq!(row(&buffer, 3), ">");
+    }
+
+    #[test]
+    fn render_shows_a_no_matches_message() {
+        let items = vec![item("production", false, None)];
+        let mut state = PickerState::new(&items);
+        state.query = "missing".to_owned();
+        state.update_scores(&items);
+
+        let (buffer, _) = render_at(40, 4, &items, &mut state);
+
+        assert!(row(&buffer, 0).contains("No matches"));
+    }
+
+    #[test]
+    fn small_terminal_keeps_a_list_row_visible() {
+        let items = vec![item("production", false, Some(ContextFields::default()))];
+        let mut state = PickerState::new(&items);
+
+        let (buffer, cursor) = render_at(30, 2, &items, &mut state);
+
+        assert!(row(&buffer, 0).contains("production"));
+        assert_eq!(cursor, Position::new(2, 1));
+    }
+
+    #[test]
+    fn status_shows_key_hints_when_space_allows() {
+        let items = vec![item("production", false, None)];
+        let mut state = PickerState::new(&items);
+
+        let buffer = render_buffer(&items, &mut state);
+
+        let status = row(&buffer, 6);
+        assert!(status.contains("enter select"));
+        assert!(status.contains("esc cancel"));
     }
 
     #[test]
