@@ -110,13 +110,13 @@ fn set_namespace_in_context(doc: &mut Value, context_name: &str, namespace: &str
             .is_some_and(|n| n == context_name);
 
         if matches {
-            if entry.get("context").is_none() {
-                if let Value::Mapping(map) = entry {
-                    map.insert(
-                        Value::String("context".to_owned()),
-                        Value::Mapping(serde_yaml::Mapping::new()),
-                    );
-                }
+            if entry.get("context").is_none()
+                && let Value::Mapping(map) = entry
+            {
+                map.insert(
+                    Value::String("context".to_owned()),
+                    Value::Mapping(serde_yaml::Mapping::new()),
+                );
             }
 
             if let Some(Value::Mapping(ctx_map)) = entry.get_mut("context") {

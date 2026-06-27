@@ -124,18 +124,18 @@ impl PickerState {
     }
 
     fn move_up(&mut self) {
-        if let Some(i) = self.list_state.selected() {
-            if i > 0 {
-                self.list_state.select(Some(i - 1));
-            }
+        if let Some(i) = self.list_state.selected()
+            && i > 0
+        {
+            self.list_state.select(Some(i - 1));
         }
     }
 
     fn move_down(&mut self) {
-        if let Some(i) = self.list_state.selected() {
-            if i + 1 < self.scored.len() {
-                self.list_state.select(Some(i + 1));
-            }
+        if let Some(i) = self.list_state.selected()
+            && i + 1 < self.scored.len()
+        {
+            self.list_state.select(Some(i + 1));
         }
     }
 
