@@ -68,7 +68,7 @@ pub(crate) fn score_items_with_matcher(
         })
         .collect();
 
-    results.sort_by(|a, b| b.score.cmp(&a.score));
+    results.sort_by_key(|item| std::cmp::Reverse(item.score));
     results
 }
 
