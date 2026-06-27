@@ -389,3 +389,117 @@ fn build_highlighted_spans<'a>(
         spans.push(Span::raw(&name[last..]));
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use ratatui::backend::TestBackend;
+    use ratatui::buffer::Buffer;
+
+    use super::*;
+
+    fn item(name: &str, is_current: bool, meta: Option<ContextFields>) -> PickerItem {
+        PickerItem {
+            name: name.to_owned(),
+            is_current,
+            meta,
+        }
+    }
+
+    fn render_buffer(items: &[PickerItem], state: &mut PickerState) -> Buffer {
+        let backend = TestBackend::new(60, 8);
+        let mut terminal = Terminal::new(backend).expect("test terminal should initialize");
+        terminal
+            .draw(|frame| render(frame, items, state))
+            .expect("picker should render");
+        terminal.backend().buffer().clone()
+    }
+
+    fn row(buffer: &Buffer, y: u16) -> String {
+        (0..buffer.area.width)
+            .map(|x| buffer[(x, y)].symbol())
+            .collect::<String>()
+            .trim_end()
+            .to_owned()
+    }
+
+    #[test]
+    fn render_shows_context_details_status_and_prompt() {
+        let items = vec![
+            item(
+                "production",
+                true,
+                Some(ContextFields {
+                    namespace: Some("payments".to_owned()),
+                    cluster: Some("prod-eu".to_owned()),
+                    user: Some("operator".to_owned()),
+                }),
+            ),
+            item("staging", false, None),
+        ];
+        let mut state = PickerState::new(&items);
+
+        let buffer = render_buffer(&items, &mut state);
+
+        assert!(row(&buffer, 0).contains("production"));
+        assert!(row(&buffer, 1).contains("staging"));
+        assert_eq!(
+            row(&buffer, 5),
+            "  ns=payments | cluster=prod-eu | user=operator"
+        );
+        assert_eq!(row(&buffer, 6), "  [2/2]");
+        assert_eq!(row(&buffer, 7), ">");
+    }
+
+    #[test]
+    fn render_updates_preview_for_selected_item() {
+        let items = vec![
+            item(
+                "production",
+                true,
+                Some(ContextFields {
+                    namespace: Some("payments".to_owned()),
+                    cluster: Some("prod-eu".to_owned()),
+                    user: Some("operator".to_owned()),
+                }),
+            ),
+            item(
+                "staging",
+                false,
+                Some(ContextFields {
+                    namespace: Some("preview".to_owned()),
+                    cluster: Some("stage-us".to_owned()),
+                    user: Some("developer".to_owned()),
+                }),
+            ),
+        ];
+        let mut state = PickerState::new(&items);
+        state.move_down();
+
+        let buffer = render_buffer(&items, &mut state);
+
+        assert_eq!(
+            row(&buffer, 5),
+            "  ns=preview | cluster=stage-us | user=developer"
+        );
+    }
+
+    #[test]
+    fn navigation_stays_within_matching_items() {
+        let items = vec![
+            item("production", false, None),
+            item("staging", false, None),
+        ];
+        let mut state = PickerState::new(&items);
+
+        state.move_up();
+        assert_eq!(state.list_state.selected(), Some(0));
+
+        state.move_down();
+        state.move_down();
+        assert_eq!(state.list_state.selected(), Some(1));
+
+        state.query = "missing".to_owned();
+        state.update_scores(&items);
+        assert_eq!(state.list_state.selected(), None);
+    }
+}
