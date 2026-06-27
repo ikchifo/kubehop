@@ -571,14 +571,12 @@ fn cmd_swap_previous(config: &Config) -> anyhow::Result<()> {
 }
 
 fn cmd_delete(config: &Config, targets: &[String]) -> anyhow::Result<()> {
-    let write_path = primary_kubeconfig(config)?;
-
     for target in targets {
         let result = if target == "." {
-            mutate::delete_current_context(write_path)
+            mutate::delete_current_context_merged(&config.kubeconfig_paths)
                 .context("failed to delete current context")?
         } else {
-            mutate::delete_context(write_path, target)
+            mutate::delete_context_merged(&config.kubeconfig_paths, target)
                 .with_context(|| format!("failed to delete context {target:?}"))?
         };
 
@@ -595,8 +593,6 @@ fn cmd_delete(config: &Config, targets: &[String]) -> anyhow::Result<()> {
 }
 
 fn cmd_rename(config: &Config, old: &str, new_name: &str) -> anyhow::Result<()> {
-    let write_path = primary_kubeconfig(config)?;
-
     let resolved_old;
     let old = if old == "." {
         let view = load_merged_view(config)?;
@@ -609,7 +605,7 @@ fn cmd_rename(config: &Config, old: &str, new_name: &str) -> anyhow::Result<()> 
         old
     };
 
-    let result = mutate::rename_context(write_path, old, new_name)
+    let result = mutate::rename_context_merged(&config.kubeconfig_paths, old, new_name)
         .with_context(|| format!("failed to rename context {old:?} to {new_name:?}"))?;
 
     eprintln!(
@@ -620,8 +616,8 @@ fn cmd_rename(config: &Config, old: &str, new_name: &str) -> anyhow::Result<()> 
 }
 
 fn cmd_unset(config: &Config) -> anyhow::Result<()> {
-    let write_path = primary_kubeconfig(config)?;
-    let result = mutate::unset_context(write_path).context("failed to unset current context")?;
+    let result = mutate::unset_context_merged(&config.kubeconfig_paths)
+        .context("failed to unset current context")?;
 
     match result.previous {
         Some(prev) => eprintln!("Active context unset (was \"{prev}\")."),

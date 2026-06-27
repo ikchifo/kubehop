@@ -1,14 +1,15 @@
 //! Context mutation: rename, delete, unset.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde_yaml::Value;
 
 use super::error::ContextError;
 use super::yaml_helpers::{
-    context_exists, load_yaml_doc, read_current_context, remove_current_context,
-    set_current_context, validate_target_exists, write_yaml_doc,
+    load_yaml_doc, remove_current_context, set_current_context, validate_target_exists,
+    write_yaml_doc,
 };
+use crate::kubeconfig::load::MergedKubeConfig;
 
 /// Outcome of a context rename operation.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -56,20 +57,61 @@ pub fn rename_context(
     old: &str,
     new_name: &str,
 ) -> Result<RenameResult, ContextError> {
-    let path = path.as_ref();
-    let mut doc = load_yaml_doc(path)?;
+    rename_context_merged(&[path.as_ref().to_path_buf()], old, new_name)
+}
 
-    validate_target_exists(&doc, old)?;
-    if old != new_name && context_exists(&doc, new_name) {
+/// Rename a context across a merged kubeconfig path list.
+///
+/// The winning context stanza is changed in the file that defines it. If the
+/// context is active, `current-context` is also updated in its owning file.
+///
+/// # Errors
+///
+/// - [`ContextError::NotFound`] if `old` is absent from the merged view.
+/// - [`ContextError::AlreadyExists`] if `new_name` belongs to another context.
+/// - [`ContextError::Kubeconfig`] for I/O or YAML parsing failures.
+pub fn rename_context_merged(
+    paths: &[PathBuf],
+    old: &str,
+    new_name: &str,
+) -> Result<RenameResult, ContextError> {
+    let merged = MergedKubeConfig::load(paths)?;
+    let context_path = merged
+        .context_source(old)
+        .ok_or_else(|| ContextError::NotFound(old.to_owned()))?
+        .to_path_buf();
+    if old != new_name && merged.context_source(new_name).is_some() {
         return Err(ContextError::AlreadyExists(new_name.to_owned()));
     }
-    rename_in_contexts(&mut doc, old, new_name);
 
-    if read_current_context(&doc).as_deref() == Some(old) {
-        set_current_context(&mut doc, new_name);
+    let updates_current = merged.view().current_context() == Some(old);
+    let current_path = updates_current
+        .then(|| merged.current_context_source())
+        .flatten()
+        .map(Path::to_path_buf);
+
+    let mut context_doc = load_yaml_doc(&context_path)?;
+    validate_target_exists(&context_doc, old)?;
+    rename_in_contexts(&mut context_doc, old, new_name);
+
+    if current_path.as_deref() == Some(context_path.as_path()) {
+        set_current_context(&mut context_doc, new_name);
+        write_yaml_doc(&context_path, &context_doc)?;
+    } else {
+        let current_doc = current_path
+            .as_deref()
+            .map(load_yaml_doc)
+            .transpose()?
+            .map(|mut doc| {
+                set_current_context(&mut doc, new_name);
+                doc
+            });
+
+        write_yaml_doc(&context_path, &context_doc)?;
+        if let (Some(path), Some(doc)) = (current_path.as_deref(), current_doc.as_ref()) {
+            write_yaml_doc(path, doc)?;
+        }
     }
-
-    write_yaml_doc(path, &doc)?;
 
     Ok(RenameResult {
         old_name: old.to_owned(),
@@ -89,20 +131,62 @@ pub fn rename_context(
 ///   in the `contexts` array.
 /// - [`ContextError::Kubeconfig`] for I/O or YAML parsing failures.
 pub fn delete_context(path: impl AsRef<Path>, target: &str) -> Result<DeleteResult, ContextError> {
-    let path = path.as_ref();
-    let mut doc = load_yaml_doc(path)?;
+    delete_context_merged(&[path.as_ref().to_path_buf()], target)
+}
 
-    validate_target_exists(&doc, target)?;
+/// Delete a context across a merged kubeconfig path list.
+///
+/// The winning context stanza is removed from the file that defines it. If it
+/// is active, `current-context` is removed from its owning file as well.
+///
+/// # Errors
+///
+/// - [`ContextError::NotFound`] if `target` is absent from the merged view.
+/// - [`ContextError::Kubeconfig`] for I/O or YAML parsing failures.
+pub fn delete_context_merged(
+    paths: &[PathBuf],
+    target: &str,
+) -> Result<DeleteResult, ContextError> {
+    let merged = MergedKubeConfig::load(paths)?;
+    delete_from_merged(&merged, target)
+}
 
-    let was_current = read_current_context(&doc).as_deref() == Some(target);
+fn delete_from_merged(
+    merged: &MergedKubeConfig,
+    target: &str,
+) -> Result<DeleteResult, ContextError> {
+    let context_path = merged
+        .context_source(target)
+        .ok_or_else(|| ContextError::NotFound(target.to_owned()))?
+        .to_path_buf();
+    let was_current = merged.view().current_context() == Some(target);
+    let current_path = was_current
+        .then(|| merged.current_context_source())
+        .flatten()
+        .map(Path::to_path_buf);
 
-    remove_from_contexts(&mut doc, target);
+    let mut context_doc = load_yaml_doc(&context_path)?;
+    validate_target_exists(&context_doc, target)?;
+    remove_from_contexts(&mut context_doc, target);
 
-    if was_current {
-        remove_current_context(&mut doc);
+    if current_path.as_deref() == Some(context_path.as_path()) {
+        remove_current_context(&mut context_doc);
+        write_yaml_doc(&context_path, &context_doc)?;
+    } else {
+        let current_doc = current_path
+            .as_deref()
+            .map(load_yaml_doc)
+            .transpose()?
+            .map(|mut doc| {
+                remove_current_context(&mut doc);
+                doc
+            });
+
+        write_yaml_doc(&context_path, &context_doc)?;
+        if let (Some(path), Some(doc)) = (current_path.as_deref(), current_doc.as_ref()) {
+            write_yaml_doc(path, doc)?;
+        }
     }
-
-    write_yaml_doc(path, &doc)?;
 
     Ok(DeleteResult {
         deleted: target.to_owned(),
@@ -112,29 +196,32 @@ pub fn delete_context(path: impl AsRef<Path>, target: &str) -> Result<DeleteResu
 
 /// Delete the currently active context from a kubeconfig file.
 ///
-/// Resolves `current-context` from the document and removes both the
-/// context entry and the `current-context` field in a single read-write
-/// pass, avoiding a redundant parse.
+/// Resolves `current-context` and removes both the context entry and the
+/// active-context field from their owning file or files.
 ///
 /// # Errors
 ///
 /// - [`ContextError::NoContexts`] if no `current-context` is set.
 /// - [`ContextError::Kubeconfig`] for I/O or YAML parsing failures.
 pub fn delete_current_context(path: impl AsRef<Path>) -> Result<DeleteResult, ContextError> {
-    let path = path.as_ref();
-    let mut doc = load_yaml_doc(path)?;
+    delete_current_context_merged(&[path.as_ref().to_path_buf()])
+}
 
-    let target = read_current_context(&doc).ok_or(ContextError::NoContexts)?;
-
-    remove_from_contexts(&mut doc, &target);
-    remove_current_context(&mut doc);
-
-    write_yaml_doc(path, &doc)?;
-
-    Ok(DeleteResult {
-        deleted: target,
-        was_current: true,
-    })
+/// Delete the active context across a merged kubeconfig path list.
+///
+/// # Errors
+///
+/// - [`ContextError::NoContexts`] if no `current-context` is set.
+/// - [`ContextError::NotFound`] if the active context has no winning stanza.
+/// - [`ContextError::Kubeconfig`] for I/O or YAML parsing failures.
+pub fn delete_current_context_merged(paths: &[PathBuf]) -> Result<DeleteResult, ContextError> {
+    let merged = MergedKubeConfig::load(paths)?;
+    let target = merged
+        .view()
+        .current_context()
+        .ok_or(ContextError::NoContexts)?
+        .to_owned();
+    delete_from_merged(&merged, &target)
 }
 
 /// Unset the active context in a kubeconfig file.
@@ -147,14 +234,24 @@ pub fn delete_current_context(path: impl AsRef<Path>) -> Result<DeleteResult, Co
 ///
 /// - [`ContextError::Kubeconfig`] for I/O or YAML parsing failures.
 pub fn unset_context(path: impl AsRef<Path>) -> Result<UnsetResult, ContextError> {
-    let path = path.as_ref();
-    let mut doc = load_yaml_doc(path)?;
+    unset_context_merged(&[path.as_ref().to_path_buf()])
+}
 
-    let previous = read_current_context(&doc);
-    if previous.is_none() {
+/// Unset the active context across a merged kubeconfig path list.
+///
+/// The field is removed from the first file that defines it.
+///
+/// # Errors
+///
+/// - [`ContextError::Kubeconfig`] for I/O or YAML parsing failures.
+pub fn unset_context_merged(paths: &[PathBuf]) -> Result<UnsetResult, ContextError> {
+    let merged = MergedKubeConfig::load(paths)?;
+    let previous = merged.view().current_context.clone();
+    let Some(path) = merged.current_context_source() else {
         return Ok(UnsetResult { previous: None });
-    }
+    };
 
+    let mut doc = load_yaml_doc(path)?;
     remove_current_context(&mut doc);
     write_yaml_doc(path, &doc)?;
 
