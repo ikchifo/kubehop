@@ -38,6 +38,7 @@ pub struct NsUnsetResult {
 /// # Errors
 ///
 /// - [`NamespaceError::NoCurrentContext`] if no current context is set.
+/// - [`NamespaceError::ContextNotFound`] if the current context has no entry.
 /// - [`NamespaceError::Kubeconfig`] for I/O or YAML failures.
 pub fn switch_namespace(
     path: impl AsRef<Path>,
@@ -48,7 +49,8 @@ pub fn switch_namespace(
 
     let ctx_name = read_current_context(&doc).ok_or(NamespaceError::NoCurrentContext)?;
 
-    let previous = read_namespace_of_context(&doc, &ctx_name);
+    let previous = read_namespace_of_context(&doc, &ctx_name)
+        .ok_or_else(|| NamespaceError::ContextNotFound(ctx_name.clone()))?;
     set_namespace_in_context(&mut doc, &ctx_name, namespace);
 
     write_yaml_doc(path, &doc).map_err(NamespaceError::from_context_err)?;
@@ -74,10 +76,8 @@ pub fn unset_namespace(path: impl AsRef<Path>) -> Result<NsUnsetResult, Namespac
     })
 }
 
-fn read_namespace_of_context(doc: &Value, context_name: &str) -> String {
-    let Some(contexts) = doc.get("contexts").and_then(Value::as_sequence) else {
-        return DEFAULT_NAMESPACE.to_owned();
-    };
+fn read_namespace_of_context(doc: &Value, context_name: &str) -> Option<String> {
+    let contexts = doc.get("contexts").and_then(Value::as_sequence)?;
 
     for entry in contexts {
         let matches = entry
@@ -86,16 +86,18 @@ fn read_namespace_of_context(doc: &Value, context_name: &str) -> String {
             .is_some_and(|n| n == context_name);
 
         if matches {
-            return entry
-                .get("context")
-                .and_then(|c| c.get("namespace"))
-                .and_then(Value::as_str)
-                .unwrap_or(DEFAULT_NAMESPACE)
-                .to_owned();
+            return Some(
+                entry
+                    .get("context")
+                    .and_then(|c| c.get("namespace"))
+                    .and_then(Value::as_str)
+                    .unwrap_or(DEFAULT_NAMESPACE)
+                    .to_owned(),
+            );
         }
     }
 
-    DEFAULT_NAMESPACE.to_owned()
+    None
 }
 
 fn set_namespace_in_context(doc: &mut Value, context_name: &str, namespace: &str) {
@@ -258,6 +260,28 @@ contexts:
         let f = write_temp_kubeconfig(KUBECONFIG_NO_CURRENT);
         let err = unset_namespace(f.path()).unwrap_err();
         assert!(matches!(err, NamespaceError::NoCurrentContext));
+    }
+
+    #[test]
+    fn switch_rejects_current_context_missing_from_contexts() {
+        let content = "\
+apiVersion: v1
+kind: Config
+current-context: missing
+contexts:
+  - name: dev
+    context:
+      cluster: dev-cluster
+";
+        let f = write_temp_kubeconfig(content);
+
+        let err = switch_namespace(f.path(), "monitoring").unwrap_err();
+
+        assert_eq!(
+            err.to_string(),
+            "current context \"missing\" not found in kubeconfig"
+        );
+        assert_eq!(fs::read_to_string(f.path()).unwrap(), content);
     }
 
     #[test]
