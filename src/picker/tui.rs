@@ -366,13 +366,23 @@ fn render(frame: &mut ratatui::Frame, items: &[PickerItem], state: &mut PickerSt
     let status = Paragraph::new(status_text).style(Style::default().fg(Color::DarkGray));
     frame.render_widget(status, status_area);
 
-    let input_text = format!("{PROMPT}{}", state.query);
-    let input = Paragraph::new(input_text).style(Style::default().fg(Color::Yellow));
+    let input_line = Line::from(format!("{PROMPT}{}", state.query));
+    let input_width = input_line.width();
+    let max_cursor_offset = usize::from(input_area.width.saturating_sub(1));
+    let horizontal_scroll = input_width.saturating_sub(max_cursor_offset);
+    let horizontal_scroll = u16::try_from(horizontal_scroll).unwrap_or(u16::MAX);
+    let input = Paragraph::new(input_line)
+        .style(Style::default().fg(Color::Yellow))
+        .scroll((0, horizontal_scroll));
     frame.render_widget(input, input_area);
 
-    #[allow(clippy::cast_possible_truncation)]
-    let cursor_x = input_area.x + PROMPT.len() as u16 + state.query.len() as u16;
-    frame.set_cursor_position((cursor_x, input_area.y));
+    if input_area.width > 0 && input_area.height > 0 {
+        let cursor_offset = input_width
+            .saturating_sub(usize::from(horizontal_scroll))
+            .min(max_cursor_offset);
+        let cursor_offset = u16::try_from(cursor_offset).unwrap_or(input_area.width - 1);
+        frame.set_cursor_position((input_area.x + cursor_offset, input_area.y));
+    }
 }
 
 fn render_preview(
@@ -409,26 +419,34 @@ fn selected_meta<'a>(items: &'a [PickerItem], state: &PickerState) -> Option<&'a
 
 /// Build spans for a name string with highlighted match positions.
 ///
-/// Assumes `indices` contains sorted, deduplicated byte positions that
-/// are valid for ASCII strings (kubernetes context names are DNS-compatible).
+/// `nucleo-matcher` returns sorted, deduplicated character positions rather
+/// than UTF-8 byte offsets, so each position is translated before slicing.
 fn build_highlighted_spans<'a>(
     name: &'a str,
     indices: &[u32],
     style: Style,
     spans: &mut Vec<Span<'a>>,
 ) {
-    let mut last = 0usize;
+    let mut boundaries = Vec::with_capacity(name.chars().count() + 1);
+    boundaries.extend(name.char_indices().map(|(byte_index, _)| byte_index));
+    boundaries.push(name.len());
 
+    let mut last = 0usize;
     for &idx in indices {
         let idx = idx as usize;
-        if idx >= name.len() {
+        let Some(&start) = boundaries.get(idx) else {
+            continue;
+        };
+        let Some(&end) = boundaries.get(idx + 1) else {
+            continue;
+        };
+        if start < last {
             continue;
         }
-        if idx > last {
-            spans.push(Span::raw(&name[last..idx]));
+        if start > last {
+            spans.push(Span::raw(&name[last..start]));
         }
-        let end = idx + name[idx..].chars().next().map_or(1, char::len_utf8);
-        spans.push(Span::styled(&name[idx..end], style));
+        spans.push(Span::styled(&name[start..end], style));
         last = end;
     }
 
@@ -441,6 +459,7 @@ fn build_highlighted_spans<'a>(
 mod tests {
     use ratatui::backend::TestBackend;
     use ratatui::buffer::Buffer;
+    use ratatui::layout::Position;
 
     use super::*;
 
@@ -453,12 +472,24 @@ mod tests {
     }
 
     fn render_buffer(items: &[PickerItem], state: &mut PickerState) -> Buffer {
-        let backend = TestBackend::new(60, 8);
+        render_at(60, 8, items, state).0
+    }
+
+    fn render_at(
+        width: u16,
+        height: u16,
+        items: &[PickerItem],
+        state: &mut PickerState,
+    ) -> (Buffer, Position) {
+        let backend = TestBackend::new(width, height);
         let mut terminal = Terminal::new(backend).expect("test terminal should initialize");
         terminal
             .draw(|frame| render(frame, items, state))
             .expect("picker should render");
-        terminal.backend().buffer().clone()
+        (
+            terminal.backend().buffer().clone(),
+            terminal.backend().cursor_position(),
+        )
     }
 
     fn row(buffer: &Buffer, y: u16) -> String {
@@ -548,6 +579,41 @@ mod tests {
         state.query = "missing".to_owned();
         state.update_scores(&items);
         assert_eq!(state.list_state.selected(), None);
+    }
+
+    #[test]
+    fn render_highlights_non_ascii_context_names() {
+        let items = vec![item("é-prod", false, None)];
+        let mut state = PickerState::new(&items);
+        state.query = "-".to_owned();
+        state.update_scores(&items);
+
+        let buffer = render_buffer(&items, &mut state);
+
+        assert!(row(&buffer, 0).contains("é-prod"));
+    }
+
+    #[test]
+    fn query_cursor_uses_display_width_for_unicode() {
+        let items = vec![item("production", false, None)];
+        let mut state = PickerState::new(&items);
+        state.query = "é界".to_owned();
+
+        let (_, cursor) = render_at(20, 8, &items, &mut state);
+
+        assert_eq!(cursor, Position::new(5, 7));
+    }
+
+    #[test]
+    fn long_query_scrolls_horizontally_and_keeps_cursor_visible() {
+        let items = vec![item("production", false, None)];
+        let mut state = PickerState::new(&items);
+        state.query = "abcdefghijklmnopqrstuvwxyz".to_owned();
+
+        let (buffer, cursor) = render_at(12, 8, &items, &mut state);
+
+        assert_eq!(row(&buffer, 7), "pqrstuvwxyz");
+        assert_eq!(cursor, Position::new(11, 7));
     }
 
     #[test]
