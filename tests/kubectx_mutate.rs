@@ -390,7 +390,7 @@ fn unset_preserves_clusters_and_users() {
     assert_eq!(clusters.unwrap().len(), 3);
 
     let users = doc.get("users").and_then(serde_yaml::Value::as_sequence);
-    assert!(users.is_some(), "users field must survive unset round-trip",);
+    assert!(users.is_some(), "users field must survive unset round-trip");
 }
 
 #[test]
