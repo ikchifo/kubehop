@@ -14,7 +14,6 @@ exclude = [".github/", "docs/", "tests/", "deploy/"]
 
 [dependencies]
 anyhow = "1"
-clap = { version = "4", features = ["derive"] }
 crossterm = "0.29"
 directories = "6"
 mimalloc = "0.1"
