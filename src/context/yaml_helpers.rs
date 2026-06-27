@@ -35,23 +35,24 @@ pub(crate) fn write_yaml_doc(path: &Path, doc: &Value) -> Result<(), ContextErro
 
 /// Verify that `target` appears as a context name in the `contexts` array.
 pub(super) fn validate_target_exists(doc: &Value, target: &str) -> Result<(), ContextError> {
-    let contexts = doc
-        .get(KEY_CONTEXTS)
-        .and_then(Value::as_sequence)
-        .ok_or_else(|| ContextError::NotFound(target.to_owned()))?;
-
-    let found = contexts.iter().any(|entry| {
-        entry
-            .get(KEY_NAME)
-            .and_then(Value::as_str)
-            .is_some_and(|n| n == target)
-    });
-
-    if found {
+    if context_exists(doc, target) {
         Ok(())
     } else {
         Err(ContextError::NotFound(target.to_owned()))
     }
+}
+
+pub(super) fn context_exists(doc: &Value, target: &str) -> bool {
+    doc.get(KEY_CONTEXTS)
+        .and_then(Value::as_sequence)
+        .is_some_and(|contexts| {
+            contexts.iter().any(|entry| {
+                entry
+                    .get(KEY_NAME)
+                    .and_then(Value::as_str)
+                    .is_some_and(|name| name == target)
+            })
+        })
 }
 
 /// Extract the `current-context` value from the document.

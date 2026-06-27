@@ -6,8 +6,8 @@ use serde_yaml::Value;
 
 use super::error::ContextError;
 use super::yaml_helpers::{
-    load_yaml_doc, read_current_context, remove_current_context, set_current_context,
-    validate_target_exists, write_yaml_doc,
+    context_exists, load_yaml_doc, read_current_context, remove_current_context,
+    set_current_context, validate_target_exists, write_yaml_doc,
 };
 
 /// Outcome of a context rename operation.
@@ -49,6 +49,7 @@ pub struct UnsetResult {
 ///
 /// - [`ContextError::NotFound`] if `old` does not match any entry in
 ///   the `contexts` array.
+/// - [`ContextError::AlreadyExists`] if `new_name` belongs to another context.
 /// - [`ContextError::Kubeconfig`] for I/O or YAML parsing failures.
 pub fn rename_context(
     path: impl AsRef<Path>,
@@ -59,6 +60,9 @@ pub fn rename_context(
     let mut doc = load_yaml_doc(path)?;
 
     validate_target_exists(&doc, old)?;
+    if old != new_name && context_exists(&doc, new_name) {
+        return Err(ContextError::AlreadyExists(new_name.to_owned()));
+    }
     rename_in_contexts(&mut doc, old, new_name);
 
     if read_current_context(&doc).as_deref() == Some(old) {
@@ -268,6 +272,16 @@ clusters:
         let f = write_temp_kubeconfig(SIMPLE_KUBECONFIG);
         let err = rename_context(f.path(), "nonexistent", "new").unwrap_err();
         assert!(matches!(err, ContextError::NotFound(ref name) if name == "nonexistent"));
+    }
+
+    #[test]
+    fn rename_rejects_an_existing_destination() {
+        let f = write_temp_kubeconfig(SIMPLE_KUBECONFIG);
+
+        let err = rename_context(f.path(), "dev", "staging").unwrap_err();
+
+        assert_eq!(err.to_string(), "context \"staging\" already exists");
+        assert_eq!(fs::read_to_string(f.path()).unwrap(), SIMPLE_KUBECONFIG);
     }
 
     #[test]
